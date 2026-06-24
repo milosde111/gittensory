@@ -153,6 +153,41 @@ describe("world-class backend signals", () => {
     }
   });
 
+  it("overlaps contributor label history case-insensitively (#1195 regression)", () => {
+    const profile = buildContributorProfile(
+      "scout",
+      { login: "scout", topLanguages: ["TypeScript"], source: "github" },
+      [],
+      [],
+      [
+        {
+          login: "scout",
+          repoFullName: repo.fullName,
+          pullRequests: 2,
+          mergedPullRequests: 1,
+          openPullRequests: 0,
+          issues: 0,
+          stalePullRequests: 0,
+          unlinkedPullRequests: 0,
+          dominantLabels: ["Feature"],
+          lastActivityAt: "2026-05-25T00:00:00.000Z",
+        },
+      ],
+    );
+    const issue: IssueRecord = {
+      repoFullName: repo.fullName,
+      number: 55,
+      title: "Case mismatch label fit",
+      state: "open",
+      authorLogin: "reporter",
+      labels: ["feature"],
+      linkedPrs: [],
+    };
+    const opportunities = buildContributorOpportunities(profile, [repo], [issue], []);
+    const opportunity = opportunities.find((entry) => entry.issueNumber === 55);
+    expect(opportunity?.reasons.join(" ")).toContain("labels overlap");
+  });
+
   it("ranks grabbable maintainer-created issues above community issues and downgrades maintainer WIP (#699/#186)", () => {
     const profile = buildContributorProfile("scout", { login: "scout", topLanguages: ["TypeScript"], source: "github" }, [], []);
     const maintainerOpen: IssueRecord = {

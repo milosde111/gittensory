@@ -483,6 +483,29 @@ describe("advisory rules", () => {
     expect(codes).toEqual(expect.arrayContaining(["pr_not_open", "busy_pr_queue", "label_context_found", "maintainer_authored_pr"]));
   });
 
+  it("matches configured label multipliers case-insensitively (#1195 regression)", () => {
+    const mixedCaseRepo: RepositoryRecord = {
+      ...repo,
+      registryConfig: {
+        ...repo.registryConfig!,
+        labelMultipliers: { Feature: 1.5 },
+      },
+    };
+    const pr: PullRequestRecord = {
+      repoFullName: mixedCaseRepo.fullName,
+      number: 16,
+      title: "Lowercase label on PR",
+      state: "open",
+      authorLogin: "contributor",
+      authorAssociation: "NONE",
+      labels: ["feature"],
+      linkedIssues: [1],
+    };
+
+    const advisory = buildPullRequestAdvisory(mixedCaseRepo, pr);
+    expect(advisory.findings.map((finding) => finding.code)).toContain("label_context_found");
+  });
+
   it("handles uncached PRs and closed issues", () => {
     const closedIssue: IssueRecord = {
       repoFullName: repo.fullName,

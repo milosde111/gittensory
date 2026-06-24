@@ -154,6 +154,54 @@ describe("GitHub backfill", () => {
     expect(authHeaders).toContain("Bearer public-token");
   });
 
+  it("marks registry-configured labels as configured when GitHub casing differs (#1195 regression)", async () => {
+    const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+    await persistRegistrySnapshot(
+      env,
+      normalizeRegistryPayload(
+        {
+          "JSONbored/gittensory": {
+            emission_share: 0.01,
+            issue_discovery_share: 0,
+            trusted_label_pipeline: true,
+            label_multipliers: { Bug: 1.1, Priority: 2.0 },
+          },
+        },
+        { kind: "raw-github", url: "https://example.test/master_repositories.json" },
+        "2026-05-23T00:00:00.000Z",
+      ),
+    );
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === "https://api.github.com/graphql") {
+        return githubTotalsResponse({ openIssues: 1, openPullRequests: 1, mergedPullRequests: 0, closedPullRequests: 0, labels: 2 });
+      }
+      if (url.endsWith("/repos/JSONbored/gittensory")) {
+        return Response.json({ name: "gittensory", full_name: "JSONbored/gittensory", private: false, default_branch: "main", owner: { login: "JSONbored" } });
+      }
+      if (url.includes("/labels?")) {
+        return Response.json([{ name: "bug", color: "cc0000" }, { name: "docs", color: "cccccc" }]);
+      }
+      if (url.includes("/issues?state=open")) {
+        return Response.json([{ number: 1, title: "Issue", state: "open", user: { login: "reporter" }, labels: [{ name: "bug" }, { name: "Bug" }] }]);
+      }
+      if (url.includes("/pulls?state=open")) {
+        return Response.json([{ number: 10, title: "PR", state: "open", user: { login: "author" }, labels: [{ name: "BUG" }], body: "Fixes #1" }]);
+      }
+      return Response.json([]);
+    });
+
+    await backfillRegisteredRepositories(env, { limits: { issues: 10, pullRequests: 10, recentMergedPullRequests: 0, pullRequestDetails: 0 } });
+    const labels = await listRepoLabels(env, "JSONbored/gittensory");
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "bug", isConfigured: true, observedCount: 3 }),
+        expect.objectContaining({ name: "priority", isConfigured: true, observedCount: 0 }),
+      ]),
+    );
+    expect(labels.filter((label) => label.name.toLowerCase() === "priority")).toHaveLength(1);
+  });
+
   it("paginates past the first 100 labels in the monolithic backfill path", async () => {
     const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
     await seedRegisteredRepo(env);

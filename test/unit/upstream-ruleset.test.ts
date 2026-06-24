@@ -935,6 +935,17 @@ describe("upstream ruleset drift tracking", () => {
     );
     await expect(fileUpstreamDriftIssues(objectLabelLinkedEnv)).resolves.toMatchObject({ status: "completed", created: 0, updated: 1, skipped: 0 });
 
+    const pascalCaseLabelLinkedEnv = createTestEnv({ GITTENSORY_AUTO_FILE_DRIFT_ISSUES: "true", GITTENSORY_DRIFT_ISSUE_TOKEN: "token" });
+    await upsertUpstreamDriftReport(pascalCaseLabelLinkedEnv, driftReport("pascal-case-label-linked", { issueNumber: 139, issueUrl: "https://github.com/JSONbored/gittensory/issues/139" }));
+    vi.stubGlobal(
+      "fetch",
+      githubIssueFetch({
+        issue: { number: 139, url: "https://github.com/JSONbored/gittensory/issues/139", fingerprint: "pascal-case-label-linked", labels: [{ name: "Signals" }] },
+        update: { number: 139, url: "https://github.com/JSONbored/gittensory/issues/139" },
+      }),
+    );
+    await expect(fileUpstreamDriftIssues(pascalCaseLabelLinkedEnv)).resolves.toMatchObject({ status: "completed", created: 0, updated: 1, skipped: 0 });
+
     const staleLinkedEnv = createTestEnv({ GITTENSORY_AUTO_FILE_DRIFT_ISSUES: "true", GITTENSORY_DRIFT_ISSUE_TOKEN: "token", GITTENSORY_DRIFT_ISSUE_REPO: "victim/current-repo" });
     await upsertUpstreamDriftReport(staleLinkedEnv, driftReport("stale-linked", { issueNumber: 123, issueUrl: "https://github.com/other-owner/old-repo/issues/123" }));
     const staleLinkedCalls: GitHubIssueFetchCall[] = [];

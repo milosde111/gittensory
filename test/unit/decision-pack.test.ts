@@ -1412,6 +1412,31 @@ describe("decision-pack service", () => {
     expect(missingHistory.labelFit).toEqual([]);
   });
 
+  it("matches labelFit case-insensitively via buildContributorDecisionPack (#1195 regression)", () => {
+    const pack = __decisionPackInternals.buildContributorDecisionPack({
+      login: "scout",
+      profile: {
+        login: "scout",
+        github: { topLanguages: ["TypeScript"] },
+        source: {},
+        gittensor: null,
+        registeredRepoActivity: { reposTouched: ["owner/mixed"], dominantLabels: ["Feature"] },
+        trustSignals: {},
+      } as any,
+      outcomeHistory: { login: "scout", totals: {}, repoOutcomes: [], successPatterns: [], failurePatterns: [], summary: "" } as any,
+      repositories: [repoWithLabels("owner/mixed", 0.005, 0, { feature: 1.1 })],
+      syncStates: [{ repoFullName: "owner/mixed", primaryLanguage: "TypeScript" }] as any,
+      syncSegments: [],
+      totals: [],
+      scoringModelSnapshotId: "scoring-1",
+      contributorPullRequests: [],
+      contributorIssues: [],
+      openPrMonitor: emptyOpenPrMonitor("scout"),
+    });
+    const decision = pack.repoDecisions.find((entry) => entry.repoFullName === "owner/mixed");
+    expect(decision?.labelFit).toEqual(["feature"]);
+  });
+
   it("preserves cleanup_first priority when triggered without an open_pr_pressure blocker", () => {
     const moderateCleanup = __decisionPackInternals.buildRepoDecision({
       repo: repoWithLabels("owner/moderate", 0.005, 0, { bug: 1.1 }),
