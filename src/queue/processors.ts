@@ -110,7 +110,7 @@ import { autonomyRequiresApproval, isAgentConfigured, resolveAutonomy } from "..
 import { isGlobalAgentPause, resolveAgentActionMode } from "../settings/agent-execution";
 import { selectRegateCandidates } from "../settings/agent-sweep";
 import { downgradeMergeToHold, isProtectedAutomationAuthor, planAgentMaintenanceActions } from "../settings/agent-actions";
-import { executeAgentMaintenanceActions } from "../services/agent-action-executor";
+import { executeAgentMaintenanceActions, pendingClosureLabelApplied } from "../services/agent-action-executor";
 import { processSubmitDraft } from "../services/draft";
 import { loadIssueQualityReportMap } from "../services/issue-quality";
 import { generateWeeklyValueReport } from "../services/weekly-value-report";
@@ -177,7 +177,7 @@ import { isReputationEnabled, recordReputationOutcome, shouldSkipAiForReputation
 import { isConvergenceRepoAllowed } from "../review/cutover-gate";
 import { deploymentStatusToPreview, type DeploymentStatusPayload } from "../review/visual/preview-url";
 import { loadHardGuardrailGlobs } from "../review/guardrail-config";
-import { AGENT_LABEL_PENDING_CLOSURE, evaluateLinkedIssueHardRules, loadLinkedIssueHardRules } from "../review/linked-issue-hard-rules";
+import { evaluateLinkedIssueHardRules, loadLinkedIssueHardRules } from "../review/linked-issue-hard-rules";
 import { isOpsEnabled, runOpsAlerts } from "../review/ops-wire";
 import { isSelfTuneEnabled, runSelfTune } from "../review/selftune-wire";
 import { isHoldOnly, recordPrOutcome, recordReversalSignals, runSelfTuneBreaker } from "../review/outcomes-wire";
@@ -711,7 +711,7 @@ async function maybeRunAgentMaintenance(
   const installation = await getInstallation(env, installationId);
   /* v8 ignore next -- an installed-App PR webhook always carries an installation record; the null is defensive. */
   const installationPermissions = installation?.permissions ?? null;
-  await executeAgentMaintenanceActions(
+  const actionOutcomes = await executeAgentMaintenanceActions(
     env,
     {
       installationId,
@@ -727,12 +727,11 @@ async function maybeRunAgentMaintenance(
     breakerOnPlan,
   );
 
-  // Flag-then-close double-check, Pass 2 trigger: when this pass FLAGGED the PR (added the pending-closure
-  // label), re-enqueue a delayed re-review after closeDelaySeconds so the verification pass runs promptly
-  // instead of waiting for the next CI-completion event or the hourly sweep. Best-effort — if the enqueue fails,
-  // the next sweep / CI event is the backstop Pass 2. Reuses the existing `recapture-preview` delayed-re-review
-  // job (it just re-runs reReviewStoredPullRequest), so no new job type is needed.
-  const flaggedForLinkedIssue = breakerOnPlan.some((action) => action.actionClass === "label" && action.label === AGENT_LABEL_PENDING_CLOSURE && action.labelOp === "add");
+  // Flag-then-close double-check, Pass 2 trigger: only re-enqueue when the pending-closure label mutation
+  // completed. Queued/failed/dry-run label actions do not establish the label-backed state that Pass 2 requires,
+  // so scheduling off the plan alone can create a verification loop. Best-effort — if the enqueue fails, the next
+  // sweep / CI event is the backstop Pass 2. Reuses the existing `recapture-preview` delayed-re-review job.
+  const flaggedForLinkedIssue = pendingClosureLabelApplied(breakerOnPlan, actionOutcomes);
   if (flaggedForLinkedIssue) {
     const delaySeconds = Math.max(0, linkedIssueRulesConfig.closeDelaySeconds);
     const verifyJob = { type: "recapture-preview" as const, deliveryId: `linked-issue-verify:${repoFullName}#${pr.number}`, repoFullName, prNumber: pr.number, installationId, attempt: 0 };
