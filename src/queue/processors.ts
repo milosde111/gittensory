@@ -362,6 +362,7 @@ import {
   filterReviewFilesForAi,
   resolvePullRequestAutoReviewSkipReason,
   resolveRepoEnrichmentToggles,
+  resolveReviewAutoReviewConfig,
   resolveReviewPathInstructions,
   resolveReviewPreMergeChecks,
   resolveReviewPromptOverrides,
@@ -370,6 +371,7 @@ import {
   type ReviewPathInstruction,
   type ReviewProfile,
 } from "../signals/focus-manifest";
+import { decideReviewEligibility } from "../review/review-eligibility";
 import {
   loadRepoFocusManifest,
   loadRepoFocusManifests,
@@ -579,7 +581,7 @@ function primeLiveMergeState(
 // two equal sets in different orders must hit the SAME cache entry rather than needlessly duplicating fetches.
 function expectedCiContextsKeyPart(expectedCiContexts: ReadonlyArray<string> | null | undefined): string {
   if (!expectedCiContexts || expectedCiContexts.length === 0) return "";
-  return [...expectedCiContexts].sort().join(" ");
+  return [...expectedCiContexts].sort().join("\0");
 }
 
 // Stable, order-independent cache-key fragment for the RESOLVED required-contexts set (#selfhost-ci-verification):
@@ -7280,6 +7282,44 @@ async function maybePublishPrPublicSurface(
         !needsMinerCheckForDetectedComment))
   )
     return undefined;
+  const reviewManifest = await loadRepoFocusManifest(env, repoFullName).catch(() => null);
+  const autoReviewConfig = resolveReviewAutoReviewConfig(reviewManifest);
+  const reviewEligibility = decideReviewEligibility({
+    authorLogin: author,
+    ignoreAuthors: autoReviewConfig.ignoreAuthors,
+  });
+  if (!reviewEligibility.eligible) {
+    await auditPrVisibilitySkip(
+      env,
+      repoFullName,
+      pr.number,
+      author,
+      reviewEligibility.skipReason,
+      webhook.deliveryId,
+    );
+    if (gateEnabled) {
+      const gateCheckResult = await createOrUpdateSkippedGateCheckRun(
+        env,
+        installationId,
+        repoFullName,
+        advisory,
+        "Review skipped: ignored author.",
+        mode,
+      );
+      /* v8 ignore next -- permission-missing audit behavior mirrors the existing skipped-check path above. */
+      if (gateCheckResult?.kind === "permission_missing") {
+        await auditGateCheckPermissionMissing(
+          env,
+          author,
+          repoFullName,
+          pr.number,
+          webhook.deliveryId,
+          gateCheckResult.warning,
+        );
+      }
+    }
+    return undefined;
+  }
   // A missing author already forces publicSurfaceSkipped=true above (decidePublicSurface's own
   // "missing_author" skip), so the guard just above already returns undefined whenever `!author` combines with
   // `!gateEnabled && !autonomyNeedsGateEvaluation` -- a separate `!author` check here can never fire and was

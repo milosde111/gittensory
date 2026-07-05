@@ -1531,6 +1531,7 @@ function parseReviewConfig(value: JsonValue | undefined, warnings: string[]): Fo
     footerText,
     note,
     fields,
+    autoReview,
     enrichmentAnalyzers,
     profile,
     tone,
@@ -1541,7 +1542,6 @@ function parseReviewConfig(value: JsonValue | undefined, warnings: string[]): Fo
     excludePaths,
     pathFilters,
     preMergeChecks,
-    autoReview,
   };
 }
 
@@ -1651,11 +1651,8 @@ function parseManifestGlobList(value: JsonValue | undefined, fieldLabel: string,
     return [];
   }
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const [index, entry] of value.entries()) {
-    if (out.length >= MAX_PATH_INSTRUCTIONS) {
-      warnings.push(`Manifest "${fieldLabel}" is capped at ${MAX_PATH_INSTRUCTIONS} entries; dropping the rest.`);
-      break;
-    }
     const glob = typeof entry === "string" ? entry.trim() : "";
     if (!glob) {
       warnings.push(`Manifest "${fieldLabel}[${index}]" must be a non-empty string; ignoring it.`);
@@ -1665,6 +1662,13 @@ function parseManifestGlobList(value: JsonValue | undefined, fieldLabel: string,
       warnings.push(`Manifest "${fieldLabel}[${index}]" exceeds ${MAX_ITEM_LENGTH} chars; ignoring it.`);
       continue;
     }
+    const key = glob.toLowerCase();
+    if (seen.has(key)) continue;
+    if (out.length >= MAX_PATH_INSTRUCTIONS) {
+      warnings.push(`Manifest "${fieldLabel}" is capped at ${MAX_PATH_INSTRUCTIONS} entries; dropping the rest.`);
+      break;
+    }
+    seen.add(key);
     out.push(glob);
   }
   return out;
@@ -1911,6 +1915,13 @@ export function resolveReviewPreMergeChecks(manifest: FocusManifest | null): Pre
 /** Resolve `review.enrichment` analyzer toggles from a possibly-null manifest (null = load failure ⇒ no toggles ⇒
  *  the operator's default analyzer set runs unchanged). Centralized so the enrichment caller threads them in one
  *  place with the null-manifest branch covered here (unit-tested) rather than inline in the processor. (#2050) */
+/** Resolve `review.auto_review` from a possibly-null manifest (null = load failure => no ignored authors). The
+ *  runtime eligibility check then fails open instead of suppressing review output on an ambiguous manifest read.
+ *  (#2060) */
+export function resolveReviewAutoReviewConfig(manifest: FocusManifest | null): AutoReviewConfig {
+  return manifest?.review.autoReview ?? { ...EMPTY_AUTO_REVIEW_CONFIG };
+}
+
 export function resolveEnrichmentAnalyzerToggles(manifest: FocusManifest | null): Partial<Record<ReesAnalyzerName, boolean>> {
   return manifest?.review.enrichmentAnalyzers ?? {};
 }

@@ -4061,6 +4061,15 @@ describe("api routes", () => {
     });
     await recordAuditEvent(env, {
       eventType: "github_app.pr_visibility_skipped",
+      actor: "ignored-secret",
+      targetKey: "repo-owner/owned-repo#8",
+      outcome: "completed",
+      detail: "ignored_author",
+      metadata: secretMetadata,
+      createdAt: "2026-05-28T00:00:02.500Z",
+    });
+    await recordAuditEvent(env, {
+      eventType: "github_app.pr_visibility_skipped",
       actor: "surface-secret",
       targetKey: "repo-owner/owned-repo#6",
       outcome: "completed",
@@ -4105,6 +4114,12 @@ describe("api routes", () => {
     expect(reasonFilteredBody.limit).toBe(100);
     expect(reasonFilteredBody.hasMore).toBe(false);
     expect(reasonFilteredBody.items).toEqual([expect.objectContaining({ reason: "bot_author", pullNumber: 4 })]);
+    const ignoredFiltered = await app.request("/v1/app/skipped-pr-audit?reason=ignored_author&limit=100", { headers: apiHeaders(env) }, env);
+    expect(ignoredFiltered.status).toBe(200);
+    const ignoredFilteredBody = (await ignoredFiltered.json()) as { items: Array<{ reason: string; pullNumber: number; remediation: string }> };
+    expect(ignoredFilteredBody.items).toEqual([
+      expect.objectContaining({ reason: "ignored_author", pullNumber: 8, remediation: expect.stringContaining("manifest") }),
+    ]);
     const staticRepoFiltered = await app.request("/v1/app/skipped-pr-audit?repoFullName=repo-owner/owned-repo&limit=100", { headers: apiHeaders(env) }, env);
     expect(staticRepoFiltered.status).toBe(200);
     const staticRepoFilteredBody = (await staticRepoFiltered.json()) as { items: Array<{ reason: string; remediation: string }> };
@@ -4126,9 +4141,9 @@ describe("api routes", () => {
     const ownerAudit = await app.request("/v1/app/skipped-pr-audit", { headers: ownerHeaders }, env);
     expect(ownerAudit.status).toBe(200);
     const ownerAuditBody = (await ownerAudit.json()) as { items: Array<{ repoFullName: string; reason: string }> };
-    expect(ownerAuditBody.items).toHaveLength(6);
+    expect(ownerAuditBody.items).toHaveLength(7);
     expect(ownerAuditBody.items.map((item) => item.reason)).toEqual(
-      expect.arrayContaining(["not_official_gittensor_miner", "bot_author", "miner_detection_unavailable", "surface_off", "missing_author", "legacy_skip_reason"]),
+      expect.arrayContaining(["not_official_gittensor_miner", "bot_author", "miner_detection_unavailable", "surface_off", "missing_author", "ignored_author", "legacy_skip_reason"]),
     );
     expect(JSON.stringify(ownerAuditBody)).not.toContain("victim-org");
 
