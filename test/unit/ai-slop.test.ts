@@ -416,6 +416,7 @@ describe("runAiSlopForAdvisory (processor wiring)", () => {
     const adv = advisory();
     const run = vi.fn();
     await runAiSlopForAdvisory(enabledEnv(run), {
+      mode: "live",
       settings: noByok,
       advisory: adv,
       repoFullName: "acme/widgets",
@@ -433,6 +434,7 @@ describe("runAiSlopForAdvisory (processor wiring)", () => {
   it("still runs the slop advisory when commitThresholdReached is false (the normal, not-yet-capped case)", async () => {
     const adv = advisory();
     await runAiSlopForAdvisory(enabledEnv(async () => ({ response: slopJson({ band: "high" }) })), {
+      mode: "live",
       settings: noByok,
       advisory: adv,
       repoFullName: "acme/widgets",
