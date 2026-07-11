@@ -26,7 +26,7 @@ import type {
   WeeklyValueReport,
 } from "../types";
 import { computeFleetAnalytics, type FleetAnalytics } from "../orb/analytics";
-import { computeAgentHealth, type AgentHealth } from "../review/ops";
+import { computeAgentHealth, computeCalibration, type AgentHealth, type Calibration } from "../review/ops";
 import { computeGateEval, type GateEvalReport } from "../review/parity";
 import { computeCycleTimeAggregate, type CycleTimeAggregate } from "../review/stats";
 import { loadUpstreamStatus, type UpstreamStatus } from "../upstream/ruleset";
@@ -67,6 +67,8 @@ export type OperatorDashboardPayload = {
   gateEval: GateEvalReport;
   // PR review cycle-time percentiles (#2194): gate decision → outcome from review_audit; fail-safe empty aggregate.
   cycleTime: CycleTimeAggregate;
+  // Confidence-vs-outcome calibration curve (#2192): merge confidence bins + recommended floor from computeCalibration.
+  calibration: Calibration;
   // Agent reversal health (#2193): how often humans reopened/reverted bot auto-actions (ops.ts AgentHealth).
   agentHealth: AgentHealth;
 };
@@ -94,6 +96,7 @@ export async function buildOperatorDashboardPayload(env: Env): Promise<OperatorD
     fleetMetrics,
     gateEval,
     cycleTime,
+    calibration,
     agentHealth,
   ] = await Promise.all([
     listRepositories(env),
@@ -116,6 +119,7 @@ export async function buildOperatorDashboardPayload(env: Env): Promise<OperatorD
     computeGateEval(env, { days: 90, nowMs: Date.now() }),
     // #2194: cycle-time percentiles from the stats feed; fails safe to an empty aggregate.
     computeCycleTimeAggregate(env, { days: 90, nowMs: Date.now() }),
+    computeCalibration(env, operatorAgentConfig(env)),
     computeAgentHealth(env, operatorAgentConfig(env)),
   ]);
   const weeklyValueReport = buildWeeklyValueReport({
@@ -212,6 +216,7 @@ export async function buildOperatorDashboardPayload(env: Env): Promise<OperatorD
     fleetMetrics,
     gateEval,
     cycleTime,
+    calibration,
     agentHealth,
   };
 }

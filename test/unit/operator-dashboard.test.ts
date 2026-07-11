@@ -33,6 +33,16 @@ describe("operator dashboard payload", () => {
       distribution: [],
       sampleSize: 0,
     });
+    expect(payload.calibration).toMatchObject({
+      currentFloor: 0,
+      mergedCount: 0,
+      revertedCount: 0,
+      recommendedFloor: null,
+      bins: expect.arrayContaining([
+        expect.objectContaining({ label: "90–100%", sampleSize: 0, keptRate: null }),
+      ]),
+    });
+    
     expect(payload.agentHealth).toMatchObject({
       reversals: 0,
       reversalRate: 0,

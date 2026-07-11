@@ -15,6 +15,8 @@ import { GatePrecisionCard } from "@/components/site/app-panels/gate-precision-c
 import type { GateEvalReport } from "@/components/site/app-panels/gate-precision-card-model";
 import { CycleTimeCard } from "@/components/site/app-panels/cycle-time-card";
 import type { CycleTimeAggregate } from "@/components/site/app-panels/cycle-time-card-model";
+import { CalibrationCard } from "@/components/site/app-panels/calibration-card";
+import type { GateCalibration } from "@/components/site/app-panels/calibration-card-model";
 import { ReversalHealthCard } from "@/components/site/app-panels/reversal-health-card";
 import type { ReversalHealth } from "@/components/site/app-panels/reversal-health-card-model";
 import { AnalyticsCardShell } from "@/components/site/app-panels/analytics-card-shell";
@@ -118,6 +120,7 @@ type OperatorDashboard = {
   upstreamDrift?: { status?: string; openReportCount?: number } | null;
   gateEval?: GateEvalReport;
   cycleTime?: CycleTimeAggregate;
+  calibration?: GateCalibration;
   agentHealth?: ReversalHealth;
   acceptance?: FindingAcceptance;
   findingsBreakdown?: FindingsBreakdown;
@@ -221,6 +224,8 @@ function ProductAnalytics() {
               emptyHint="Percentiles appear once the gate has resolved paired PRs in the analytics window."
             />
           )}
+
+          {data.calibration ? <CalibrationCard calibration={data.calibration} /> : null}
 
           {data.agentHealth ? <ReversalHealthCard health={data.agentHealth} /> : null}
           <AcceptanceRateCard acceptance={data.acceptance} />
