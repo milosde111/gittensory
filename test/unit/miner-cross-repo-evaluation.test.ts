@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 function tempRepo(files: Record<string, string> = {}) {
-  const root = mkdtempSync(join(tmpdir(), "gittensory-cross-repo-eval-"));
+  const root = mkdtempSync(join(tmpdir(), "loopover-cross-repo-eval-"));
   roots.push(root);
   for (const [rel, content] of Object.entries(files)) {
     writeFileSync(join(root, rel), content, "utf8");
@@ -124,7 +124,7 @@ describe("cross-repo evaluation harness (#4788)", () => {
     it("ignores non-strings and negative guidance lines", () => {
       expect(scanPositiveLoopoverAssumptions(null as never)).toEqual([]);
       const text = [
-        "Do not assume LoopOver/gittensory CI conventions or `npm run test:ci`.",
+        "Do not assume LoopOver CI conventions or `npm run test:ci`.",
         "Run npm run test:ci before finishing.",
       ].join("\n");
       expect(scanPositiveLoopoverAssumptions(text)).toEqual([
@@ -170,7 +170,7 @@ describe("cross-repo evaluation harness (#4788)", () => {
       expect(result.stackDetected).toBe(true);
     });
 
-    it("fails gittensory_assumption when injected instructions leak LoopOver CI defaults", () => {
+    it("fails loopover_assumption when injected instructions leak LoopOver CI defaults", () => {
       const repoPath = tempRepo({
         "package.json": pkg({ scripts: { test: "node --test" } }),
       });
