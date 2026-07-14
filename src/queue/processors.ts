@@ -87,6 +87,7 @@ import {
   upsertPullRequestFromGitHub,
   upsertRepositoryFromGitHub,
 } from "../db/repositories";
+import { renameRepositoryIdentity } from "../db/repo-identity-rename";
 import {
   effectiveIssueCapForAccountAge,
   isBelowAccountAgeThreshold,
@@ -490,6 +491,7 @@ import {
 } from "../signals/focus-manifest";
 import { decideReviewEligibility } from "../review/review-eligibility";
 import {
+  hasLocalManifest,
   loadPublicRepoFocusManifest,
   loadRepoFocusManifest,
   loadRepoFocusManifests,
@@ -626,7 +628,7 @@ import type {
   RepositorySettings,
 } from "../types";
 import { sha256Hex } from "../utils/crypto";
-import { errorMessage, nowIso } from "../utils/json";
+import { errorMessage, nowIso, repoParts } from "../utils/json";
 import { maybeSuggestMilestoneMatchForPr } from "../integrations/project-tracker-adapter";
 
 const OFFICIAL_MINER_DETECTION_TTL_MS = 5 * 60 * 1000;
@@ -5185,6 +5187,69 @@ async function maybeHandleForeignAppInstallationWebhookEvent(
 }
 
 /**
+ * Handles a `repository` webhook with `action: "renamed"`: migrates the repo's identity forward across
+ * every structural repo-identity column (see repo-identity-rename.ts) BEFORE the caller's normal
+ * upsertRepositoryFromGitHub(payload.repository) runs, so that upsert correctly UPDATEs the now-renamed
+ * anchor row instead of inserting a fresh, disconnected duplicate. A no-op (and safely so) for any other
+ * event/action, for a payload missing the old-name field, or when the old and new names are identical
+ * (e.g. a case-only GitHub-side normalization with nothing to migrate).
+ */
+async function maybeHandleRepositoryRenamedWebhookEvent(
+  env: Env,
+  eventName: string,
+  payload: GitHubWebhookPayload,
+): Promise<void> {
+  if (eventName !== "repository" || payload.action !== "renamed") return;
+  const oldName = payload.changes?.repository?.name?.from;
+  const newFullName = payload.repository?.full_name;
+  if (!oldName || !newFullName) return;
+  const owner = payload.repository?.owner?.login ?? repoParts(newFullName).owner;
+  const oldFullName = `${owner}/${oldName}`;
+  if (oldFullName === newFullName) return;
+  await renameRepositoryIdentity(env, oldFullName, newFullName);
+  await recordAuditEvent(env, {
+    eventType: "github_app.repository_renamed",
+    actor: "loopover",
+    targetKey: newFullName,
+    outcome: "completed",
+    detail: `repository identity migrated from ${oldFullName} to ${newFullName}`,
+    metadata: { oldFullName, newFullName },
+  });
+  await maybeWarnOnMissingLocalConfigAfterRename(env, oldFullName, newFullName);
+}
+
+/**
+ * #repo-rename-migration (self-host follow-up): the ONE piece of a rename that renameRepositoryIdentity
+ * cannot fix on its own -- a self-host operator's container-private per-repo config folder
+ * (LOOPOVER_REPO_CONFIG_DIR/{owner}__{repo}/...), which the app can only READ (the mount is read-only)
+ * and which private-config.ts derives from the repo's CURRENT name. If one existed under the old name but
+ * not the new one, the operator's gate/autonomy/review policy for this repo just silently reverted to
+ * global defaults -- loud enough to reach Sentry (level:"error"), not a routine info line, because the
+ * failure mode is exactly "reviews quietly stop matching what the operator configured," not a crash.
+ * A cloud deployment (no local reader registered) always resolves both sides false, so this never fires there.
+ */
+async function maybeWarnOnMissingLocalConfigAfterRename(env: Env, oldFullName: string, newFullName: string): Promise<void> {
+  const [hadOldLocalConfig, hasNewLocalConfig] = await Promise.all([hasLocalManifest(oldFullName), hasLocalManifest(newFullName)]);
+  if (!hadOldLocalConfig || hasNewLocalConfig) return;
+  await recordAuditEvent(env, {
+    eventType: "selfhost.repo_rename_local_config_missing",
+    actor: "loopover",
+    targetKey: newFullName,
+    outcome: "denied",
+    detail: `${oldFullName} had a container-private per-repo config folder, but ${newFullName} does not -- the operator's gate/autonomy/review policy for this repo has silently reverted to defaults. Rename or copy the config folder on the host to match the new repo name.`,
+    metadata: { oldFullName, newFullName },
+  });
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event: "selfhost_repo_rename_local_config_missing",
+      oldFullName,
+      newFullName,
+    }),
+  );
+}
+
+/**
  * Handles the `installation_repositories` webhook event: upserts added repos, marks removed repos, and
  * records product-usage telemetry for both. Extracted from processGitHubWebhook (#4607) — pure code
  * motion, no behavior change.
@@ -6142,6 +6207,9 @@ export async function processGitHubWebhook(
         : undefined);
     await handleInstallationRepositoriesWebhookEvent(env, eventName, payload, installationActor);
     await handleInstallationCreatedWebhookEvent(env, eventName, payload, installationActor);
+    // Must run BEFORE the upsertRepositoryFromGitHub(payload.repository) call just below: that upsert keys
+    // on full_name, so renaming the anchor row first is what makes it an UPDATE instead of a fresh INSERT.
+    await maybeHandleRepositoryRenamedWebhookEvent(env, eventName, payload);
 
     const installationId = getInstallationId(payload);
     if (payload.repositories) {

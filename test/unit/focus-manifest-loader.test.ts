@@ -3,6 +3,7 @@ import { createTestEnv } from "../helpers/d1";
 import type { JsonValue } from "../../src/types";
 import {
   fetchRepoFocusManifestFile,
+  hasLocalManifest,
   loadPublicRepoFocusManifest,
   loadRepoFocusManifest,
   loadRepoFocusManifests,

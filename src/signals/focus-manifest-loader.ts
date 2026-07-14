@@ -72,6 +72,23 @@ export async function loadRepoReviewContext(
 }
 
 /**
+ * True iff a container-private local manifest is registered (self-host only -- always false in cloud,
+ * where no reader is ever set) AND resolves non-null for `repoFullName`. A read error degrades to false,
+ * matching every other local-reader consumer's fail-safe-empty behavior. Used by the repo-rename webhook
+ * handler (#repo-rename-migration) to detect the ONE thing a rename can't migrate on its own: the
+ * operator's own container-private per-repo config folder, which this module derives from the CURRENT
+ * repo name and can only read, never write (the mount is read-only from the app's own perspective).
+ */
+export async function hasLocalManifest(repoFullName: string): Promise<boolean> {
+  if (!localManifestReader) return false;
+  try {
+    return (await localManifestReader(repoFullName)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetch a maintainer-owned manifest file from the public GitHub raw endpoint. Network or HTTP
  * failures resolve to null so the loader falls back to deterministic signals.
  */

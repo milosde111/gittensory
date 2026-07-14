@@ -311,6 +311,16 @@ export type GitHubWebhookPayload = {
   label?: {
     name?: string;
   };
+  /** Present on a `repository` webhook with `action: "renamed"` -- `changes.repository.name.from` is the
+   *  OLD bare repo name (not full_name); `repository.full_name` on this same payload is already the NEW
+   *  current identity. See maybeHandleRepositoryRenamedWebhookEvent in queue/processors.ts. */
+  changes?: {
+    repository?: {
+      name?: {
+        from?: string;
+      };
+    };
+  };
 };
 
 export type GitHubWebhookUserPayload = {
