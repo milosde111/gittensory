@@ -11,8 +11,10 @@ import { PostHog } from "posthog-node";
 // The wrapper also never throws: a PostHog init/capture failure degrades to recording nothing, exactly like
 // the unconfigured path, so it can never surface an error into the MCP tool caller.
 //
-// NOT WIRED YET: per #6235 this module is deliberately NOT called from the tool-dispatch path — that (and the
-// client lifecycle/flush strategy a live Worker needs) is the separate instrumentation issue's job.
+// WIRED into the remote tool-dispatch path (#6237, merged PR #6358): {@link recordMcpToolCall} is invoked from
+// `recordMcpToolTelemetry` in src/mcp/server.ts — the single chokepoint every `tools/call` request that reaches
+// handleMcpRequest routes through exactly once, whether it succeeds or throws. (The local/CLI-side counterpart,
+// packages/loopover-mcp/lib/telemetry.js, has its own separate wiring status per #6236/#6238.)
 
 /** PostHog US-cloud ingestion host — the default when POSTHOG_HOST isn't set. */
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
