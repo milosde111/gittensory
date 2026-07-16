@@ -1335,6 +1335,120 @@ describe("queue processors", () => {
     expect(seen.comments.some((c) => c.includes("blocked from contributing"))).toBe(true);
   });
 
+  it("blacklist (#6659): a banned author's close also cancels the PR's in-flight CI runs, unconditionally (no config toggle)", async () => {
+    const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+    await upsertInstallation(env, {
+      installation: { id: 123, account: { login: "JSONbored", id: 1, type: "User" }, target_type: "User", repository_selection: "all", permissions: { metadata: "read", pull_requests: "write", issues: "write" }, events: ["pull_request"] },
+      repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
+    });
+    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto", label: "auto" } });
+    // contributorBlacklist moved off the DB entirely (Batch B, loopover#6443) -- set via manifest injection,
+    // same as the deterministic-close test above. No contributorCapCancelCi anywhere -- CI-cancel on a
+    // blacklist close is unconditional, unlike contributor_cap's opt-in toggle.
+    await upsertRepoFocusManifest(
+      env,
+      "JSONbored/gittensory",
+      { settings: { commentMode: "all_prs", publicSurface: "comment_only", checkRunMode: "off", contributorBlacklist: [{ login: "baduser", reason: "force-push CI churn" }], reviewCheckMode: "required", aiReviewMode: "advisory" } },
+      "repo_file",
+    );
+    const seen = { closed: false, cancelledIds: [] as number[], listedStatuses: [] as string[] };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? "GET";
+      if (url === "https://api.gittensor.io/miners") return Response.json([]);
+      if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+      if (url.includes("/pulls/55/files")) return Response.json([{ filename: "src/a.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "@@\n+const ok = true;" }]);
+      if (url.includes("/pulls/55/reviews")) return Response.json([]);
+      if (url.includes("/pulls/55/commits")) return Response.json([]);
+      if (url.endsWith("/pulls/55") && method === "PATCH") { seen.closed = JSON.parse(String(init?.body ?? "{}")).state === "closed"; return Response.json({ number: 55, state: "closed" }); }
+      if (url.endsWith("/pulls/55")) return Response.json({ number: 55, state: "open", user: { login: "baduser" }, head: { sha: "bl55" }, mergeable_state: "clean" });
+      if (url.includes("/commits/bl55/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+      if (url.includes("/commits/bl55/status")) return Response.json({ state: "success", statuses: [] });
+      if (url.includes("/issues/55/labels")) return Response.json([]);
+      if (url.includes("/issues/55/comments")) return Response.json([]);
+      if (url.includes("/actions/runs?head_sha=bl55&status=in_progress")) { seen.listedStatuses.push("in_progress"); return Response.json({ workflow_runs: [{ id: 301, event: "pull_request", pull_requests: [{ number: 55 }] }] }); }
+      if (url.includes("/actions/runs?head_sha=bl55&status=queued")) { seen.listedStatuses.push("queued"); return Response.json({ workflow_runs: [{ id: 302, event: "pull_request", pull_requests: [{ number: 55 }] }] }); }
+      if (url.includes("/actions/runs/") && url.endsWith("/cancel") && method === "POST") {
+        seen.cancelledIds.push(Number(url.match(/\/actions\/runs\/(\d+)\/cancel/)?.[1]));
+        return new Response(null, { status: 202 });
+      }
+      return Response.json({});
+    });
+
+    await processJob(env, {
+      type: "github-webhook",
+      deliveryId: "blacklist-close-cancel-ci",
+      eventName: "pull_request",
+      payload: {
+        action: "opened",
+        installation: { id: 123, account: { login: "JSONbored", id: 1, type: "User" } },
+        repository: { name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } },
+        pull_request: { number: 55, title: "Banned author PR", state: "open", user: { login: "baduser" }, head: { sha: "bl55" }, labels: [], body: "Closes #1", mergeable_state: "clean", reviewDecision: "APPROVED" },
+      },
+    });
+
+    expect(seen.closed).toBe(true);
+    expect(seen.listedStatuses.sort()).toEqual(["in_progress", "queued"]);
+    expect(seen.cancelledIds.sort()).toEqual([301, 302]);
+    const cancelAudit = await env.DB.prepare("select count(*) as n from audit_events where event_type = 'github_app.blacklist_ci_cancelled'").first<{ n: number }>();
+    expect(cancelAudit?.n).toBeGreaterThanOrEqual(1);
+  });
+
+  it("blacklist (#6659): a failed CI-cancel attempt degrades gracefully — the close still succeeds and a blacklist-specific failure audit is recorded", async () => {
+    const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+    await upsertInstallation(env, {
+      installation: { id: 123, account: { login: "JSONbored", id: 1, type: "User" }, target_type: "User", repository_selection: "all", permissions: { metadata: "read", pull_requests: "write", issues: "write" }, events: ["pull_request"] },
+      repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
+    });
+    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto", label: "auto" } });
+    await upsertRepoFocusManifest(
+      env,
+      "JSONbored/gittensory",
+      { settings: { commentMode: "all_prs", publicSurface: "comment_only", checkRunMode: "off", contributorBlacklist: [{ login: "baduser", reason: "force-push CI churn" }], reviewCheckMode: "required", aiReviewMode: "advisory" } },
+      "repo_file",
+    );
+    const seen = { closed: false, cancelledIds: [] as number[] };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? "GET";
+      if (url === "https://api.gittensor.io/miners") return Response.json([]);
+      if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+      if (url.includes("/pulls/55/files")) return Response.json([{ filename: "src/a.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "@@\n+const ok = true;" }]);
+      if (url.includes("/pulls/55/reviews")) return Response.json([]);
+      if (url.includes("/pulls/55/commits")) return Response.json([]);
+      if (url.endsWith("/pulls/55") && method === "PATCH") { seen.closed = JSON.parse(String(init?.body ?? "{}")).state === "closed"; return Response.json({ number: 55, state: "closed" }); }
+      if (url.endsWith("/pulls/55")) return Response.json({ number: 55, state: "open", user: { login: "baduser" }, head: { sha: "bl55" }, mergeable_state: "clean" });
+      if (url.includes("/commits/bl55/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+      if (url.includes("/commits/bl55/status")) return Response.json({ state: "success", statuses: [] });
+      if (url.includes("/issues/55/labels")) return Response.json([]);
+      if (url.includes("/issues/55/comments")) return Response.json([]);
+      // A genuine cancel error (not a permission gap) -- both branches of that inner distinction are already
+      // covered by the contributor_cap tests above; this just needs to hit the new blacklist-prefixed event.
+      if (url.includes("/actions/runs?head_sha=bl55&status=in_progress")) return Response.json({ workflow_runs: [{ id: 303, event: "pull_request", pull_requests: [{ number: 55 }] }] });
+      if (url.includes("/actions/runs?head_sha=bl55&status=queued")) return Response.json({ workflow_runs: [] });
+      if (url.includes("/actions/runs/") && url.endsWith("/cancel") && method === "POST") { seen.cancelledIds.push(303); return new Response(null, { status: 500 }); }
+      return Response.json({});
+    });
+
+    await expect(
+      processJob(env, {
+        type: "github-webhook",
+        deliveryId: "blacklist-close-cancel-ci-failed",
+        eventName: "pull_request",
+        payload: {
+          action: "opened",
+          installation: { id: 123, account: { login: "JSONbored", id: 1, type: "User" } },
+          repository: { name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } },
+          pull_request: { number: 55, title: "Banned author PR", state: "open", user: { login: "baduser" }, head: { sha: "bl55" }, labels: [], body: "Closes #1", mergeable_state: "clean", reviewDecision: "APPROVED" },
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(seen.closed).toBe(true);
+    const failedAudit = await env.DB.prepare("select count(*) as n from audit_events where event_type = 'github_app.blacklist_ci_cancel_failed'").first<{ n: number }>();
+    expect(failedAudit?.n).toBeGreaterThanOrEqual(1);
+  });
+
   it("screenshot-table gate (#2006): an in-scope contributor PR missing a before/after table is closed deterministically regardless of the (unrelated, still-running) AI review and no merit merge", async () => {
     let aiCalls = 0;
     const env = createTestEnv({

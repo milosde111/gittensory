@@ -534,13 +534,20 @@ export async function executeAgentMaintenanceActions(env: Env, ctx: AgentActionE
     try {
       const detailOverride = await performAction(env, ctx, action);
       await audit("completed", detailOverride ?? action.reason);
-      // CI-run cancellation on a contributor_cap close (#2462, anti-abuse): stop burning CI minutes on a PR
-      // that was just closed for exceeding the contributor cap. Best-effort, AFTER the close already
+      // CI-run cancellation on an anti-abuse close (#2462 contributor_cap; extended to blacklist #6659): stop
+      // burning CI minutes on a PR that was just closed for exceeding the contributor cap, or for a banned
+      // login. contributor_cap stays opt-in (contributorCapCancelCi) since a repo may want the cap to bite
+      // without touching CI; blacklist is unconditional -- there is no scenario where a maintainer wants a
+      // permanently-banned login's CI to keep running after the close. Best-effort, AFTER the close already
       // succeeded -- cancelInFlightWorkflowRunsForHeadSha never throws, so a missing actions:write grant (or
       // any other failure here) can never retroactively turn this already-successful close into a recorded
       // "error" by escaping into the catch block below.
-      if (action.actionClass === "close" && action.closeKind === "contributor_cap" && ctx.contributorCapCancelCi && ctx.headSha) {
-        await recordContributorCapCiCancelOutcome(env, ctx, ctx.headSha);
+      if (action.actionClass === "close" && ctx.headSha) {
+        if (action.closeKind === "contributor_cap" && ctx.contributorCapCancelCi) {
+          await recordCiCancelOutcome(env, "contributor_cap", ctx, ctx.headSha);
+        } else if (action.closeKind === "blacklist") {
+          await recordCiCancelOutcome(env, "blacklist", ctx, ctx.headSha);
+        }
       }
       // Re-approval idempotency: record the head SHA we just approved so the planner skips re-approving this
       // exact commit on the next sweep (a GitHub App's own approval does not reliably flip reviewDecision to
@@ -680,14 +687,22 @@ async function maybeEscalateModeration(
   });
 }
 
-/** CI-run cancellation on a contributor_cap close (#2462): runs cancelInFlightWorkflowRunsForHeadSha and
- *  records exactly one of two audit outcomes, mirroring the established `github_app.*_permission_missing`
- *  convention (processors.ts's check-run/gate-check permission-missing audits) so a fleet-wide actions:write
- *  scope gap surfaces the same way those already do. Never throws -- both recordAuditEvent calls are
- *  best-effort (`.catch(() => undefined)`), since a failure to WRITE the audit record must not retroactively
- *  affect the close this already ran after. */
-async function auditContributorCapCiCancelled(
+// CI-run cancellation on an anti-abuse close (#2462 contributor_cap, extended to blacklist #6659): the two
+// closeKinds that share this behavior. contributor_cap keeps its original event-type spelling below (an
+// existing Grafana/audit convention other tooling already queries by -- never renamed); blacklist gets its
+// own parallel spelling rather than reusing contributor_cap's, so the audit trail never mislabels WHY a
+// PR's CI was cancelled.
+type CiCancelReasonKind = "contributor_cap" | "blacklist";
+
+/** CI-run cancellation on an anti-abuse close: runs cancelInFlightWorkflowRunsForHeadSha and records exactly
+ *  one of two audit outcomes, mirroring the established `github_app.*_permission_missing` convention
+ *  (processors.ts's check-run/gate-check permission-missing audits) so a fleet-wide actions:write scope gap
+ *  surfaces the same way those already do. Never throws -- both recordAuditEvent calls are best-effort
+ *  (`.catch(() => undefined)`), since a failure to WRITE the audit record must not retroactively affect the
+ *  close this already ran after. */
+async function auditCiCancelled(
   env: Env,
+  reasonKind: CiCancelReasonKind,
   targetKey: string,
   repoFullName: string,
   headSha: string,
@@ -695,38 +710,40 @@ async function auditContributorCapCiCancelled(
 ): Promise<void> {
   const detail = `cancelled ${outcome.cancelledCount} of ${outcome.totalFound} in-flight workflow run(s)`;
   const metadata = { repoFullName, headSha, cancelledCount: outcome.cancelledCount, totalFound: outcome.totalFound };
-  const write = recordAuditEvent(env, { eventType: "github_app.contributor_cap_ci_cancelled", actor: AGENT_ACTOR, targetKey, outcome: "completed", detail, metadata });
+  const eventType = reasonKind === "blacklist" ? "github_app.blacklist_ci_cancelled" : "github_app.contributor_cap_ci_cancelled";
+  const write = recordAuditEvent(env, { eventType, actor: AGENT_ACTOR, targetKey, outcome: "completed", detail, metadata });
   await write.catch(() => undefined);
 }
 
 // #gate finding: a genuine cancel error (network/create-token/list-run failure -- reason "error") is not a
 // permission gap; recording it under the permission-missing event type mislabels it for anyone
 // querying/dashboarding by eventType, even though metadata.reason already carries the real outcome.kind.
-async function auditContributorCapCiCancelFailed(env: Env, targetKey: string, repoFullName: string, headSha: string, reason: string, warning: string): Promise<void> {
+async function auditCiCancelFailed(env: Env, reasonKind: CiCancelReasonKind, targetKey: string, repoFullName: string, headSha: string, reason: string, warning: string): Promise<void> {
   const metadata = { repoFullName, headSha, reason };
-  const eventType = reason === "permission_missing" ? "github_app.contributor_cap_ci_cancel_permission_missing" : "github_app.contributor_cap_ci_cancel_failed";
+  const prefix = reasonKind === "blacklist" ? "blacklist" : "contributor_cap";
+  const eventType = reason === "permission_missing" ? `github_app.${prefix}_ci_cancel_permission_missing` : `github_app.${prefix}_ci_cancel_failed`;
   const write = recordAuditEvent(env, { eventType, actor: AGENT_ACTOR, targetKey, outcome: "error", detail: warning, metadata });
   await write.catch(() => undefined);
 }
 
-async function recordContributorCapCiCancelOutcome(env: Env, ctx: AgentActionExecutionContext, headSha: string): Promise<void> {
+async function recordCiCancelOutcome(env: Env, reasonKind: CiCancelReasonKind, ctx: AgentActionExecutionContext, headSha: string): Promise<void> {
   const targetKey = `${ctx.repoFullName}#${ctx.pullNumber}`;
   const outcome = await cancelInFlightWorkflowRunsForHeadSha(env, ctx.installationId, ctx.repoFullName, headSha, ctx.pullNumber);
   if (outcome.kind === "cancelled") {
-    await auditContributorCapCiCancelled(env, targetKey, ctx.repoFullName, headSha, outcome);
+    await auditCiCancelled(env, reasonKind, targetKey, ctx.repoFullName, headSha, outcome);
     return;
   }
   console.error(
     JSON.stringify({
       level: "error",
-      event: "contributor_cap_ci_cancel_failed",
+      event: `${reasonKind}_ci_cancel_failed`,
       reason: outcome.kind,
       repository: ctx.repoFullName,
       pullNumber: ctx.pullNumber,
       message: outcome.warning,
     }),
   );
-  await auditContributorCapCiCancelFailed(env, targetKey, ctx.repoFullName, headSha, outcome.kind, outcome.warning);
+  await auditCiCancelFailed(env, reasonKind, targetKey, ctx.repoFullName, headSha, outcome.kind, outcome.warning);
 }
 
 export type IssueActionExecutionContext = {
