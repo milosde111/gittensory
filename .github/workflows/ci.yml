@@ -2,6 +2,10 @@ name: CI
 
 on:
   pull_request:
+    # Explicit list because the default (opened/synchronize/reopened) omits ready_for_review -- once the
+    # heavy jobs below start skipping draft PRs, marking a PR ready must itself trigger a real CI run, not
+    # wait for the next push.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -165,7 +169,9 @@ jobs:
   validate-code:
     name: validate-code
     needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.miner == 'true' || needs.changes.outputs.rees == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.observability == 'true' }}
+    # draft != true also gates push runs correctly: github.event.pull_request is unset there, so the
+    # property access evaluates to null, and null != true is true.
+    if: ${{ github.event_name == 'push' || (github.event.pull_request.draft != true && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.miner == 'true' || needs.changes.outputs.rees == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.observability == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -446,7 +452,7 @@ jobs:
   validate-tests:
     name: validate-tests
     needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' }}
+    if: ${{ github.event_name == 'push' || (github.event.pull_request.draft != true && needs.changes.outputs.backend == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -627,7 +633,7 @@ jobs:
   validate-tests-merge:
     name: validate-tests-merge
     needs: [changes, validate-tests]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' }}
+    if: ${{ github.event_name == 'push' || (github.event.pull_request.draft != true && needs.changes.outputs.backend == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -678,7 +684,7 @@ jobs:
   # audit workflow, so one upstream CVE never blocks unrelated PRs.
   security:
     name: security
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
     # actions/dependency-review-action needs no self-hosted toolchain/cache (checkout + a lockfile diff), so
     # this always runs on ubuntu-latest -- keeping it self-hosted for same-repo PRs only competed for the
     # scarce self-hosted pool with validate-code, the one job that actually benefits from it (#2501).
