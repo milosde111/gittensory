@@ -4851,7 +4851,6 @@ describe("queue processors", () => {
         linkedIssueGateMode: "off",
         manifestPolicyGateMode: opts.manifestPolicyGateMode ?? "advisory",
         aiReviewMode: "off",
-        typeLabelsEnabled: false,
       });
       await upsertPullRequestFromGitHub(env, repoFullName, {
         number: prNumber,
@@ -4883,7 +4882,7 @@ describe("queue processors", () => {
       await upsertRepoFocusManifest(env, repoFullName, {
         testExpectations: ["Run npm run test:ci."],
         features: { e2eTests: opts.e2eTests ?? true },
-        review: { e2e_test_auto_trigger: opts.autoTrigger ?? true, ...(opts.e2eTestDelivery ? { e2e_test_delivery: opts.e2eTestDelivery } : {}) }, settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" },
+        review: { e2e_test_auto_trigger: opts.autoTrigger ?? true, ...(opts.e2eTestDelivery ? { e2e_test_delivery: opts.e2eTestDelivery } : {}) }, settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false },
       });
     }
 
@@ -5255,7 +5254,6 @@ describe("queue processors", () => {
         linkedIssueGateMode: "off",
         manifestPolicyGateMode: "advisory",
         aiReviewMode: "off",
-        typeLabelsEnabled: false,
       });
       await upsertPullRequestFromGitHub(env, repoFullName, {
         number: prNumber,
@@ -5279,7 +5277,7 @@ describe("queue processors", () => {
       });
       await upsertRepoFocusManifest(env, repoFullName, {
         testExpectations: ["Run npm run test:ci."],
-        features: { e2eTests: opts.e2eTests ?? true }, settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" },
+        features: { e2eTests: opts.e2eTests ?? true }, settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false },
       });
     }
 
@@ -5673,9 +5671,8 @@ describe("queue processors", () => {
         linkedIssueGateMode: "off",
         manifestPolicyGateMode: "advisory",
         aiReviewMode: "off",
-        typeLabelsEnabled: false,
       });
-      await upsertRepoFocusManifest(env, repoFullName, { testExpectations: ["Run npm run test:ci."], features: { e2eTests: true }, settings: { commentMode: "detected_contributors_only", publicAudienceMode: "gittensor_only", publicSurface: "comment_and_label", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, repoFullName, { testExpectations: ["Run npm run test:ci."], features: { e2eTests: true }, settings: { commentMode: "detected_contributors_only", publicAudienceMode: "gittensor_only", publicSurface: "comment_and_label", checkRunMode: "off", typeLabelsEnabled: false } });
       // gateEvaluation needs a resolved CI aggregate (mocking the module function directly is far simpler than
       // stubbing every raw status/check-suite endpoint the live CI aggregator would otherwise call) -- but
       // NOT "passed": resolveManifestPassedValidationCount treats a fully-green live CI rollup as validation
@@ -5972,12 +5969,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", publicAudienceMode: "oss_maintainer", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", publicAudienceMode: "oss_maintainer", checkRunMode: "off", createMissingLabel: false } });
       await upsertOfficialMinerDetection(env, "contributor", { status: "not_found" }, 60_000);
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(210, seen);
@@ -6004,12 +6000,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: false,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", publicAudienceMode: "gittensor_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", publicAudienceMode: "gittensor_only", checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false, minerList: 0 };
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = input.toString();
@@ -6062,7 +6057,6 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         // The only difference from the pre-existing "keeps GitHub-history-only contributors quiet" test
         // (which has the gate off, so it returns before ever reaching the type-label decision): with the
         // gate ENABLED, the function does NOT bail out early, so this is the only path that actually
@@ -6071,7 +6065,7 @@ describe("queue processors", () => {
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "all_prs", publicSurface: "comment_and_label", publicAudienceMode: "gittensor_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "all_prs", publicSurface: "comment_and_label", publicAudienceMode: "gittensor_only", checkRunMode: "off", createMissingLabel: false } });
       await upsertOfficialMinerDetection(env, "contributor", { status: "not_found" }, 60_000);
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(217, seen);
@@ -6098,13 +6092,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        typeLabelsEnabled: false,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", publicAudienceMode: "oss_maintainer", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", publicAudienceMode: "oss_maintainer", checkRunMode: "off", typeLabelsEnabled: false, createMissingLabel: false } });
       await upsertOfficialMinerDetection(env, "contributor", { status: "not_found" }, 60_000);
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(211, seen);
@@ -6131,12 +6123,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", includeMaintainerAuthors: false, checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", includeMaintainerAuthors: false, checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(212, seen);
 
@@ -6162,12 +6153,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(213, seen);
 
@@ -6193,17 +6183,15 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
-        // A self-host taxonomy well beyond the built-in bug/feature/priority triad (#label-modularity):
-        // `security` is a registered category with no title-classification rule of its own, so it is
-        // never CHOSEN here, but it must still be a cleanup CANDIDATE (never left dangling on a PR whose
-        // classification moved elsewhere) exactly like the built-in categories.
-        typeLabels: { bug: "gittensor:bug", feature: "gittensor:feature", priority: "gittensor:priority", security: "area:security" },
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+      // A self-host taxonomy well beyond the built-in bug/feature/priority triad (#label-modularity):
+      // `security` is a registered category with no title-classification rule of its own, so it is
+      // never CHOSEN here, but it must still be a cleanup CANDIDATE (never left dangling on a PR whose
+      // classification moved elsewhere) exactly like the built-in categories.
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false, typeLabels: { bug: "gittensor:bug", feature: "gittensor:feature", priority: "gittensor:priority", security: "area:security" } } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(218, seen);
 
@@ -6229,12 +6217,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "comment_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "comment_only", checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(214, seen);
 
@@ -6259,13 +6246,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        typeLabelsEnabled: false,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", typeLabelsEnabled: false, createMissingLabel: false } });
       await upsertOfficialMinerDetection(env, "contributor", { status: "confirmed", snapshot: queueMinerSnapshot("contributor") }, 60_000);
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(215, seen);
@@ -6291,11 +6276,10 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: false,
-        typeLabelsEnabled: false,
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", checkRunMode: "enabled" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", checkRunMode: "enabled", typeLabelsEnabled: false } });
       await upsertOfficialMinerDetection(env, "contributor", { status: "confirmed", snapshot: queueMinerSnapshot("contributor") }, 60_000);
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(216, seen);
@@ -6364,17 +6348,23 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
-        linkedIssueLabelPropagation: {
-          enabled: true,
-          mode: "exclusive_type_label",
-          mappings: [{ issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: true }],
+      });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+        settings: {
+          commentMode: "off",
+          publicSurface: "label_only",
+          checkRunMode: "off",
+          createMissingLabel: false,
+          linkedIssueLabelPropagation: {
+            enabled: true,
+            mode: "exclusive_type_label",
+            mappings: [{ issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: true }],
+          },
         },
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
       const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
       stubPropagationFetch(220, 1, seen, () => Response.json({ number: 1, state: "open", user: { login: "contributor" }, labels: ["gittensor:priority"] }));
 
@@ -6408,7 +6398,6 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "acme/widget",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "disabled",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
@@ -6418,16 +6407,23 @@ describe("queue processors", () => {
         // to do and bails before the label block. `label: "auto"` is the minimal opt-in that reproduces this
         // without pulling in merge/close autonomy's own CI-wait/rebase machinery.
         autonomy: { label: "auto" },
-        linkedIssueLabelPropagation: {
-          enabled: true,
-          mode: "exclusive_type_label",
-          mappings: [
-            { issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true },
-            { issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: false },
-          ],
+      });
+      await upsertRepoFocusManifest(env, "acme/widget", {
+        settings: {
+          commentMode: "off",
+          publicSurface: "label_only",
+          checkRunMode: "off",
+          createMissingLabel: false,
+          linkedIssueLabelPropagation: {
+            enabled: true,
+            mode: "exclusive_type_label",
+            mappings: [
+              { issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true },
+              { issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: false },
+            ],
+          },
         },
       });
-      await upsertRepoFocusManifest(env, "acme/widget", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
       const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
       // The linked issue is CLOSED, at a timestamp at/after this PR's own merge -- GitHub's standard "Closes #N"
       // auto-close, fired by this very merge. Title deliberately uses a verb ("fold") absent from the
@@ -6481,17 +6477,23 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
-        linkedIssueLabelPropagation: {
-          enabled: true,
-          mode: "exclusive_type_label",
-          mappings: [{ issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: true }],
+      });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+        settings: {
+          commentMode: "off",
+          publicSurface: "label_only",
+          checkRunMode: "off",
+          createMissingLabel: false,
+          linkedIssueLabelPropagation: {
+            enabled: true,
+            mode: "exclusive_type_label",
+            mappings: [{ issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: true }],
+          },
         },
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
       const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
       stubPropagationFetch(221, 1, seen, () => new Response("server error", { status: 500 }));
 
@@ -6527,17 +6529,23 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "acme/widget",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
-        linkedIssueLabelPropagation: {
-          enabled: true,
-          mode: "exclusive_type_label",
-          mappings: [{ issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true }],
+      });
+      await upsertRepoFocusManifest(env, "acme/widget", {
+        settings: {
+          commentMode: "off",
+          publicSurface: "label_only",
+          checkRunMode: "off",
+          createMissingLabel: false,
+          linkedIssueLabelPropagation: {
+            enabled: true,
+            mode: "exclusive_type_label",
+            mappings: [{ issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true }],
+          },
         },
       });
-      await upsertRepoFocusManifest(env, "acme/widget", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
       const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
       let issueShouldFail = false;
       stubPropagationFetch(4716, 2216, seen, () =>
@@ -6571,17 +6579,23 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
-        linkedIssueLabelPropagation: {
-          enabled: true,
-          mode: "exclusive_type_label",
-          mappings: [{ issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: true }],
+      });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+        settings: {
+          commentMode: "off",
+          publicSurface: "label_only",
+          checkRunMode: "off",
+          createMissingLabel: false,
+          linkedIssueLabelPropagation: {
+            enabled: true,
+            mode: "exclusive_type_label",
+            mappings: [{ issueLabel: "gittensor:priority", prLabel: "gittensor:priority", removeOtherTypeLabels: true }],
+          },
         },
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
       const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
       stubPropagationFetch(223, 1, seen, () => Response.json({ number: 1, state: "open", user: { login: "contributor" }, labels: ["gittensor:priority"] }));
 
@@ -6629,17 +6643,23 @@ describe("queue processors", () => {
           await upsertRepositorySettings(env, {
             repoFullName: "JSONbored/gittensory",
             autoLabelEnabled: true,
-            createMissingLabel: false,
             reviewCheckMode: "required",
             linkedIssueGateMode: "off",
             aiReviewMode: "off",
-            linkedIssueLabelPropagation: {
-              enabled: true,
-              mode: "exclusive_type_label",
-              mappings: [{ issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true }],
+          });
+          await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+            settings: {
+              commentMode: "off",
+              publicSurface: "label_only",
+              checkRunMode: "off",
+              createMissingLabel: false,
+              linkedIssueLabelPropagation: {
+                enabled: true,
+                mode: "exclusive_type_label",
+                mappings: [{ issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true }],
+              },
             },
           });
-          await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
           const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
           stubPropagationFetch(4818, 2192, seen, () => Response.json({ number: 2192, state: "closed", closed_at: "2026-07-11T02:26:25Z", user: { login: "JSONbored" }, labels: ["gittensor:feature"] }));
 
@@ -6685,17 +6705,23 @@ describe("queue processors", () => {
         await upsertRepositorySettings(env, {
           repoFullName: "acme/widget",
           autoLabelEnabled: true,
-          createMissingLabel: false,
           reviewCheckMode: "required",
           linkedIssueGateMode: "off",
           aiReviewMode: "off",
-          linkedIssueLabelPropagation: {
-            enabled: true,
-            mode: "exclusive_type_label",
-            mappings: [{ issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true }],
+        });
+        await upsertRepoFocusManifest(env, "acme/widget", {
+          settings: {
+            commentMode: "off",
+            publicSurface: "label_only",
+            checkRunMode: "off",
+            createMissingLabel: false,
+            linkedIssueLabelPropagation: {
+              enabled: true,
+              mode: "exclusive_type_label",
+              mappings: [{ issueLabel: "gittensor:feature", prLabel: "gittensor:feature", removeOtherTypeLabels: true }],
+            },
           },
         });
-        await upsertRepoFocusManifest(env, "acme/widget", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
         const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
         stubPropagationFetch(9001, 501, seen, () => Response.json({ number: 501, state: "open", user: { login: "contributor" }, labels: ["gittensor:feature"] }));
 
@@ -6753,13 +6779,12 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "acme/widget",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
         // linkedIssueLabelPropagation intentionally omitted -- defaults to disabled.
       });
-      await upsertRepoFocusManifest(env, "acme/widget", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "acme/widget", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], issueFetches: 0 };
       stubPropagationFetch(222, 1, seen, () => Response.json({ number: 1, state: "open", labels: ["gittensor:priority"] }));
 
@@ -6786,12 +6811,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(219, seen);
 
@@ -6821,12 +6845,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(220, seen);
       failAuditEventInsertsContaining(env, "github_app.type_label_decision");
@@ -6853,13 +6876,11 @@ describe("queue processors", () => {
       await upsertRepositorySettings(env, {
         repoFullName: "JSONbored/gittensory",
         autoLabelEnabled: true,
-        typeLabelsEnabled: false,
-        createMissingLabel: false,
         reviewCheckMode: "required",
         linkedIssueGateMode: "off",
         aiReviewMode: "off",
       });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false, createMissingLabel: false } });
       const seen = { posted: [] as string[], removed: [] as string[], checkRunCreated: false };
       stubTypeLabelFetch(221, seen);
       failAuditEventInsertsContaining(env, "github_app.type_label_decision");

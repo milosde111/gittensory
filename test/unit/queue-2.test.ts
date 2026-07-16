@@ -3708,9 +3708,8 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false } });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
       pullNumber: 43,
@@ -3793,9 +3792,8 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false } });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
       pullNumber: 44,
@@ -3881,7 +3879,6 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
     // wantedPaths configured + a changed file outside it produces manifest_off_focus (NOT one of the three
     // enforceable codes); testExpectations configured + no evidence produces manifest_missing_tests (IS
@@ -3889,7 +3886,7 @@ describe("queue processors", () => {
     await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
       wantedPaths: ["docs/"],
       testExpectations: ["Run npm run test:ci."],
-      settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" },
+      settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false },
     });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
@@ -3975,9 +3972,8 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false } });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
       pullNumber: 45,
@@ -4063,9 +4059,8 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { linkedIssuePolicy: "required", settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { linkedIssuePolicy: "required", settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false } });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
       pullNumber: 46,
@@ -4151,9 +4146,8 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { linkedIssuePolicy: "required", settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { linkedIssuePolicy: "required", settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false } });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
       pullNumber: 47,
@@ -4239,9 +4233,8 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { testExpectations: ["Run npm run test:ci."], settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false } });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",
       pullNumber: 46,
@@ -4330,12 +4323,11 @@ describe("queue processors", () => {
       linkedIssueGateMode: "off",
       manifestPolicyGateMode: "block",
       requireLinkedIssue: false,
-      typeLabelsEnabled: false,
     });
     await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
       testExpectations: ["Run npm run test:ci."],
       review: { auto_review: { ignore_authors: ["*[bot]"] } },
-      settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" },
+      settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", typeLabelsEnabled: false },
     });
     await upsertPullRequestFile(env, {
       repoFullName: "JSONbored/gittensory",

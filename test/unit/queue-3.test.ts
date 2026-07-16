@@ -1273,12 +1273,15 @@ describe("queue processors", () => {
       reviewCheckMode: "required",
       aiReviewMode: "advisory",
       autonomy: { close: "auto", label: "auto" },
-      // The banned login is per-repo DB config; the label is the configurable `.loopover.yml` value below —
-      // nothing is hard-coded.
-      contributorBlacklist: [{ login: "baduser", reason: "plagiarism" }],
     });
+    // contributorBlacklist moved off the DB entirely (Batch B, loopover#6443) -- set via manifest injection.
     // The label is configurable via `.loopover.yml` (default "slop"); set a custom one to prove it's not hardcoded.
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "all_prs", publicSurface: "comment_only", checkRunMode: "off", blacklistLabel: "spam" } }, "repo_file");
+    await upsertRepoFocusManifest(
+      env,
+      "JSONbored/gittensory",
+      { settings: { commentMode: "all_prs", publicSurface: "comment_only", checkRunMode: "off", blacklistLabel: "spam", contributorBlacklist: [{ login: "baduser", reason: "plagiarism" }] } },
+      "repo_file",
+    );
     const seen = { closed: false, labels: [] as string[], comments: [] as string[] };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();

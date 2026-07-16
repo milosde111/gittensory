@@ -6064,6 +6064,10 @@ describe("api routes", () => {
       gittensorLabel: "gittensor-miner",
     });
     // publicSurface moved off the DB entirely (Batch A, loopover#6442) -- set via manifest injection instead.
+    // createMissingLabel/gittensorLabel stay DB-injected here: buildRegistrationReadinessResponse's
+    // applyConfigAsCodeOnlyFields only overlays the effective value for Batch A's 9 fields (#6442) -- every
+    // other field, including these two, is intentionally the RAW DB value (the #2912 raw-vs-manifest
+    // comparison design), so a manifest override here would NOT show up in this response.
     await upsertRepoFocusManifest(env, "entrius/allways-ui", { settings: { publicSurface: "off" } });
     const directReadiness = await app.request("/v1/repos/entrius/allways-ui/registration-readiness", { headers: apiHeaders(env) }, env);
     expect(directReadiness.status).toBe(200);

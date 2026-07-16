@@ -1783,14 +1783,24 @@ describe("review-evasion protection (#review-evasion-protection)", () => {
       },
       repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
     });
+    // reviewEvasionProtection is manifest-only now (Batch B, loopover#6443); pull any test override out of
+    // `overrides` before it reaches the DB write below so a per-test `{ reviewEvasionProtection: "off" }` still
+    // takes effect via the manifest overlay instead of being silently outranked by the "close" default.
+    const { reviewEvasionProtection, ...dbOverrides } = overrides;
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autonomy: { close: "auto" },
       agentPaused: false,
-      reviewEvasionProtection: "close",
-      ...overrides,
+      ...dbOverrides,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+      settings: {
+        publicSurface: "off",
+        commentMode: "off",
+        checkRunMode: "off",
+        reviewEvasionProtection: (reviewEvasionProtection as "off" | "close" | undefined) ?? "close",
+      },
+    });
   }
 
   // Generic GitHub fetch stub covering every endpoint the evasion handlers (and the surrounding webhook
@@ -2094,8 +2104,8 @@ describe("review-evasion protection (#review-evasion-protection)", () => {
         },
         repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
       });
-      await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false, reviewEvasionProtection: "close" });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off" } });
+      await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off", reviewEvasionProtection: "close" } });
       await repositoriesModule.startActiveReviewTracking(env, { repoFullName: "JSONbored/gittensory", pullNumber: 42, headSha: "abc123", deliveryId: "review-start-1" });
 
       await processJob(env, { type: "github-webhook", deliveryId: "self-close-no-write", eventName: "pull_request", payload: closedPayload("contributor") });
@@ -2690,8 +2700,8 @@ describe("review-evasion protection (#review-evasion-protection)", () => {
         },
         repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
       });
-      await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false, reviewEvasionProtection: "close" });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off" } });
+      await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off", reviewEvasionProtection: "close" } });
       await repositoriesModule.startActiveReviewTracking(env, { repoFullName: "JSONbored/gittensory", pullNumber: 42, headSha: "abc123", deliveryId: "review-start-1" });
 
       await processJob(env, { type: "github-webhook", deliveryId: "draft-evasion-no-write", eventName: "pull_request", payload: draftEvasionPayload("contributor") });
@@ -3159,8 +3169,8 @@ describe("review-evasion protection (#review-evasion-protection)", () => {
         },
         repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
       });
-      await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false, reviewEvasionProtection: "close" });
-      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off" } });
+      await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false });
+      await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "off", commentMode: "off", checkRunMode: "off", reviewEvasionProtection: "close" } });
 
       await processJob(env, { type: "github-webhook", deliveryId: "draft-cycle-no-write-1", eventName: "pull_request", payload: draftEvasionPayload("contributor") });
       await processJob(env, { type: "github-webhook", deliveryId: "draft-cycle-no-write-2", eventName: "pull_request", payload: draftEvasionPayload("contributor") });

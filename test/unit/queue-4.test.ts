@@ -1289,12 +1289,11 @@ describe("queue processors", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: true,
-      createMissingLabel: false,
       reviewCheckMode: "required",
       linkedIssueGateMode: "off",
       aiReviewMode: "off",
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false } });
     await upsertOfficialMinerDetection(env, "contributor", { status: "confirmed", snapshot: queueMinerSnapshot("contributor") }, 60_000);
     let labelPosts = 0;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -5559,9 +5558,10 @@ describe("queue processors", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: true,
-      createMissingLabel: true,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "detected_contributors_only", publicSurface: "comment_only", checkRunMode: "enabled", checkRunDetailLevel: "standard" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+      settings: { commentMode: "detected_contributors_only", publicSurface: "comment_only", checkRunMode: "enabled", checkRunDetailLevel: "standard", createMissingLabel: true },
+    });
     const calls = { checks: 0 };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
@@ -5828,9 +5828,10 @@ describe("queue processors", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: true,
-      createMissingLabel: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "detected_contributors_only", publicSurface: "label_only", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+      settings: { commentMode: "detected_contributors_only", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false },
+    });
     const calls = { comments: 0, labels: 0, minerList: 0 };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
@@ -5910,9 +5911,10 @@ describe("queue processors", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: true,
-      createMissingLabel: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "detected_contributors_only", publicSurface: "label_only", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+      settings: { commentMode: "detected_contributors_only", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false },
+    });
     const calls = { comments: 0, labels: 0 };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
@@ -6184,9 +6186,10 @@ describe("queue processors", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: true,
-      createMissingLabel: false,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "detected_contributors_only", publicSurface: "label_only", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", {
+      settings: { commentMode: "detected_contributors_only", publicSurface: "label_only", checkRunMode: "off", createMissingLabel: false },
+    });
     let officialSource: "down" | "confirmed" = "down";
     const calls = { minerList: 0, labels: 0 };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -6263,10 +6266,9 @@ describe("queue processors", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: true,
-      createMissingLabel: false,
       agentPaused: true,
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "comment_and_label", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { publicSurface: "comment_and_label", checkRunMode: "off", createMissingLabel: false } });
     const calls = { labels: 0, comments: 0 };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();

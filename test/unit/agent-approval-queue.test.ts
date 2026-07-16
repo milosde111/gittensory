@@ -195,7 +195,8 @@ describe("agent approval queue (#779)", () => {
 
   it("accept holds a staged merge behind a still-open, OVERLAPPING older sibling under mergeTrainMode: enforce (#selfhost-merge-train-overlap)", async () => {
     const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: "x" });
-    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto_with_approval" }, mergeTrainMode: "enforce" });
+    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto_with_approval" } });
+    await upsertRepoFocusManifest(env, "owner/repo", { settings: { mergeTrainMode: "enforce" } });
     await seedInstallation(env);
     // Relative to Date.now() (this file never pins the system clock) so the sibling is unambiguously OLDER
     // than the current PR but still well within the 24h merge-train staleness cap.
@@ -212,7 +213,8 @@ describe("agent approval queue (#779)", () => {
 
   it("accept does NOT hold a staged merge behind an older sibling sharing no linked issue or file, even under mergeTrainMode: enforce", async () => {
     const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: "x" });
-    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto_with_approval" }, mergeTrainMode: "enforce" });
+    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto_with_approval" } });
+    await upsertRepoFocusManifest(env, "owner/repo", { settings: { mergeTrainMode: "enforce" } });
     await seedInstallation(env);
     const olderCreatedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const newerCreatedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -321,8 +323,8 @@ describe("agent approval queue (#779)", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "owner/repo",
       autonomy: { close: "auto_with_approval" },
-      contributorBlacklist: [{ login: "plagiarist", reason: "plagiarism" }],
     });
+    await upsertRepoFocusManifest(env, "owner/repo", { settings: { contributorBlacklist: [{ login: "plagiarist", reason: "plagiarism" }] } });
     await seedInstallation(env);
     await upsertPullRequestFromGitHub(env, "owner/repo", { number: 7, title: "PR", state: "open", user: { login: "plagiarist" }, head: { sha: "h7" }, labels: [], body: "x" });
     const { action } = await createPendingAgentActionIfAbsent(env, { repoFullName: "owner/repo", pullNumber: 7, installationId: 5, actionClass: "close", autonomyLevel: "auto_with_approval", params: { closeComment: "blocked", closeKind: "blacklist", expectedHeadSha: "h7" }, reason: "blacklisted contributor" });
@@ -337,7 +339,8 @@ describe("agent approval queue (#779)", () => {
   it("REGRESSION: accept rechecks blacklist closes against the effective global blacklist", async () => {
     const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: "x" });
     await Promise.all([
-      upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { close: "auto_with_approval" }, contributorBlacklist: [] }),
+      upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { close: "auto_with_approval" } }),
+      upsertRepoFocusManifest(env, "owner/repo", { settings: { contributorBlacklist: [] } }),
       upsertGlobalContributorBlacklist(env, { contributorBlacklist: [{ login: "fleet-banned", reason: "global" }] }),
     ]);
     await seedInstallation(env);
@@ -356,7 +359,8 @@ describe("agent approval queue (#779)", () => {
     // passes cleanly -- only re-resolving blacklist membership against the CURRENT repo settings (not the
     // plan-time snapshot baked into the sticky pending row) detects that the maintainer removed the entry.
     const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: "x" });
-    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { close: "auto_with_approval" }, contributorBlacklist: [] });
+    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { close: "auto_with_approval" } });
+    await upsertRepoFocusManifest(env, "owner/repo", { settings: { contributorBlacklist: [] } });
     await seedInstallation(env);
     await upsertPullRequestFromGitHub(env, "owner/repo", { number: 7, title: "PR", state: "open", user: { login: "reformed" }, head: { sha: "h7" }, labels: [], body: "x" });
     const { action } = await createPendingAgentActionIfAbsent(env, { repoFullName: "owner/repo", pullNumber: 7, installationId: 5, actionClass: "close", autonomyLevel: "auto_with_approval", params: { closeComment: "blocked", closeKind: "blacklist", expectedHeadSha: "h7" }, reason: "blacklisted contributor" });
