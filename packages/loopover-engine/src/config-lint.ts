@@ -25,6 +25,7 @@ const TOP_LEVEL_FIELDS = [
   "upstreamDriftIssues",
   "sweepWatchdog",
   "prReconciliation",
+  "federatedIntelligence",
 ] as const;
 
 const TOP_LEVEL_FIELD_SET = new Set<string>(TOP_LEVEL_FIELDS);

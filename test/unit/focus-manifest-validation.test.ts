@@ -137,7 +137,7 @@ prReconciliation:
     });
   });
 
-  it("omits maintainerRecap/ops/publicStats/draftFlow/upstreamDriftIssues/sweepWatchdog/prReconciliation from the normalized output when none are configured", () => {
+  it("omits maintainerRecap/ops/publicStats/draftFlow/upstreamDriftIssues/sweepWatchdog/prReconciliation/federatedIntelligence from the normalized output when none are configured", () => {
     const result = buildFocusManifestValidation({ content: "wantedPaths: [src/]\n" });
     expect(result.normalized).not.toHaveProperty("maintainerRecap");
     expect(result.normalized).not.toHaveProperty("ops");
@@ -146,6 +146,13 @@ prReconciliation:
     expect(result.normalized).not.toHaveProperty("upstreamDriftIssues");
     expect(result.normalized).not.toHaveProperty("sweepWatchdog");
     expect(result.normalized).not.toHaveProperty("prReconciliation");
+    expect(result.normalized).not.toHaveProperty("federatedIntelligence");
+  });
+
+  it("includes a configured federatedIntelligence block in the normalized settings-preview output (#6998)", () => {
+    const result = buildFocusManifestValidation({ content: "federatedIntelligence:\n  enabled: true\n" });
+    expect(result.warnings).toEqual([]);
+    expect(result.normalized).toMatchObject({ federatedIntelligence: { enabled: true } });
   });
 
   it("returns error when manifest content is not a mapping", () => {

@@ -150,6 +150,14 @@ reviewRecap:
     expect(result.recognizedFields).toEqual(["prReconciliation"]);
   });
 
+  it("recognizes a standalone top-level federatedIntelligence: block instead of flagging it as unknown (#6998)", () => {
+    const result = lintManifestText("federatedIntelligence:\n  enabled: true\n");
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(result.recognizedFields).toEqual(["federatedIntelligence"]);
+  });
+
   it("flags legacy blockedPaths with a migration-specific warning, not the generic unknown-field message", () => {
     const result = lintManifestText("wantedPaths: [src/]\nblockedPaths: [dist/]\n");
 

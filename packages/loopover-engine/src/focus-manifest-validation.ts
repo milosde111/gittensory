@@ -13,6 +13,7 @@ import {
   upstreamDriftIssuesConfigToJson,
   sweepWatchdogConfigToJson,
   prReconciliationConfigToJson,
+  federatedIntelligenceConfigToJson,
   settingsOverrideToJson,
   type FocusManifest,
   type FocusManifestSource,
@@ -94,6 +95,8 @@ function focusManifestToNormalizedJson(manifest: FocusManifest): Record<string, 
   if (sweepWatchdog !== null) normalized.sweepWatchdog = sweepWatchdog;
   const prReconciliation = prReconciliationConfigToJson(manifest.prReconciliation);
   if (prReconciliation !== null) normalized.prReconciliation = prReconciliation;
+  const federatedIntelligence = federatedIntelligenceConfigToJson(manifest.federatedIntelligence);
+  if (federatedIntelligence !== null) normalized.federatedIntelligence = federatedIntelligence;
 
   return normalized;
 }
