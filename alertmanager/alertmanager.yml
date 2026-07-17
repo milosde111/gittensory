@@ -123,12 +123,28 @@ receivers:
   # Integration Key here. Keep the key out of git with routing_key_file (mount a file
   # at /etc/alertmanager/pagerduty_routing_key), or inline it with routing_key in a
   # non-committed deploy copy of this file.
+  #
+  # client/group/class + details give the incident real context beyond the bare
+  # summary (which deployment paged, which alert rule, the runbook/description your
+  # own alert rules already annotate, how many instances are firing) -- so triage
+  # doesn't require opening Grafana first. Not setting a PagerDuty "Priority" (P1-P5)
+  # here -- that's not a pagerduty_config field; it's PagerDuty's own Event
+  # Orchestration feature, configured on their side, not Alertmanager's.
   # - name: "oncall-pager"
   #   pagerduty_configs:
   #     - routing_key_file: /etc/alertmanager/pagerduty_routing_key
   #       send_resolved: true
   #       severity: '{{ .CommonLabels.severity }}'
   #       description: '{{ .CommonAnnotations.summary }}'
+  #       client: "loopover Alertmanager"
+  #       group: "loopover-selfhost"
+  #       class: '{{ .CommonLabels.alertname }}'
+  #       details:
+  #         summary: '{{ .CommonAnnotations.summary }}'
+  #         description: '{{ .CommonAnnotations.description }}'
+  #         runbook: '{{ .CommonAnnotations.runbook }}'
+  #         num_firing: '{{ .Alerts.Firing | len }}'
+  #         firing_instances: '{{ range .Alerts.Firing }}{{ .Labels.instance }} {{ end }}'
 
   # ── Generic webhook (custom handler, a non-PagerDuty on-call tool, etc.) ──────
   # POSTs the Alertmanager JSON payload to any HTTP endpoint. Prefer a native
