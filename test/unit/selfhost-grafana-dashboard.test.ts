@@ -99,14 +99,14 @@ describe("Loopover Self-Host Grafana dashboard", () => {
     const dashboard = readDashboard(selfhostDashboardPath);
     const targets = dashboard.panels.flatMap((panel) => panel.targets ?? []);
 
-    expect(targets.some((target) => target.expr === "sum by (result) (rate(loopover_github_response_cache_total[5m]))")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (class, result) (loopover_github_response_cache_total)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (result) ((rate(loopover_github_response_cache_total[5m]) or rate(gittensory_github_response_cache_total[5m])))")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (class, result) ((loopover_github_response_cache_total or gittensory_github_response_cache_total))")).toBe(true);
     expect(targets.some((target) => target.legendFormat === "{{class}} {{result}}")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (remaining_bucket, key_scope) (rate(loopover_github_rest_rate_limit_observations_total[5m])) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (status, retry, key_scope) (rate(loopover_github_rest_rate_limit_responses_total[5m])) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (kind, key_scope, job_type) (rate(loopover_jobs_rate_limit_admission_deferred_total[5m])) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (kind, key_scope, job_type) (rate(loopover_jobs_rate_limit_budget_deferred_total[5m])) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (kind, key_scope, job_type) (rate(loopover_jobs_rate_limited_by_type_total[5m])) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (remaining_bucket, key_scope) ((rate(loopover_github_rest_rate_limit_observations_total[5m]) or rate(gittensory_github_rest_rate_limit_observations_total[5m]))) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (status, retry, key_scope) ((rate(loopover_github_rest_rate_limit_responses_total[5m]) or rate(gittensory_github_rest_rate_limit_responses_total[5m]))) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (kind, key_scope, job_type) ((rate(loopover_jobs_rate_limit_admission_deferred_total[5m]) or rate(gittensory_jobs_rate_limit_admission_deferred_total[5m]))) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (kind, key_scope, job_type) ((rate(loopover_jobs_rate_limit_budget_deferred_total[5m]) or rate(gittensory_jobs_rate_limit_budget_deferred_total[5m]))) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (kind, key_scope, job_type) ((rate(loopover_jobs_rate_limited_by_type_total[5m]) or rate(gittensory_jobs_rate_limited_by_type_total[5m]))) or vector(0)")).toBe(true);
     // The AI request/fallback + cost/token panels moved to the consolidated grafana/dashboards/ai-usage.json
     // (Phase B2, 2026-07) — see test/unit/selfhost-grafana-ai-usage-dashboard.test.ts for their coverage there.
   });
@@ -128,9 +128,9 @@ describe("Loopover Self-Host Grafana dashboard", () => {
     const dashboard = readDashboard(selfhostDashboardPath);
     const targets = dashboard.panels.flatMap((panel) => panel.targets ?? []);
 
-    expect(targets.some((target) => target.expr === "loopover_orb_events_exported_total or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "loopover_orb_export_errors_total or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (result) (rate(loopover_orb_webhook_total[5m])) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_orb_events_exported_total or gittensory_orb_events_exported_total) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_orb_export_errors_total or gittensory_orb_export_errors_total) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (result) ((rate(loopover_orb_webhook_total[5m]) or rate(gittensory_orb_webhook_total[5m]))) or vector(0)")).toBe(true);
   });
 
   it("no longer references loopover_orb_events_recorded_total / loopover_orb_installs_total, retired with the per-instance Orb App in #1256 but never cleaned out of the dashboard (2026-07 fix)", () => {
@@ -188,7 +188,7 @@ describe("Loopover Self-Host Grafana dashboard", () => {
     expect(targets.some((target) => target.expr === 'topk(10, pg_stat_user_tables_n_live_tup{datname="loopover"}) or vector(0)')).toBe(true);
     expect(targets.some((target) => target.expr === 'topk(10, pg_stat_user_tables_n_dead_tup{datname="loopover"}) or vector(0)')).toBe(true);
     expect(targets.some((target) => target.expr === 'sum by (relname) (increase(pg_stat_user_tables_autovacuum_count{datname="loopover"}[1h])) or vector(0)')).toBe(true);
-    expect(targets.some((target) => target.expr === 'loopover_backup_files{target=~"postgres|sqlite|qdrant"} or vector(0)')).toBe(true);
+    expect(targets.some((target) => target.expr === '(loopover_backup_files or gittensory_backup_files){target=~"postgres|sqlite|qdrant"} or vector(0)')).toBe(true);
   });
 
   it("ships Postgres and backup alerts for the same dashboarded failure modes", () => {
@@ -224,8 +224,8 @@ describe("Loopover Self-Host Grafana dashboard", () => {
         "Maintenance Admission Deferrals (total)",
       ]),
     );
-    expect(targets.some((target) => target.expr === "sum by (reason, job_type) (rate(loopover_jobs_maintenance_admission_deferred_by_reason_total[5m])) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum(rate(loopover_jobs_maintenance_admission_deferred_total[5m])) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (reason, job_type) ((rate(loopover_jobs_maintenance_admission_deferred_by_reason_total[5m]) or rate(gittensory_jobs_maintenance_admission_deferred_by_reason_total[5m]))) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum((rate(loopover_jobs_maintenance_admission_deferred_total[5m]) or rate(gittensory_jobs_maintenance_admission_deferred_total[5m]))) or vector(0)")).toBe(true);
   });
 
   it("surfaces self-host runtime-drift signal panels, every counter query fleet-aggregated", () => {
@@ -247,21 +247,21 @@ describe("Loopover Self-Host Grafana dashboard", () => {
     );
     // Every stat-panel counter is sum()-wrapped, matching its siblings -- a multi-instance self-host scrape
     // must render one fleet-level value per stat, not one value per target (gate finding, #chore-runtime-drift).
-    expect(targets.some((target) => target.expr === "sum(loopover_jobs_maintenance_trickle_admitted_persisted_total) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === 'sum(loopover_orb_relay_register_total{result="failed"}) or vector(0)')).toBe(true);
-    expect(targets.some((target) => target.expr === 'sum(loopover_installation_health_broker_probe_total{result="failed"}) or vector(0)')).toBe(true);
+    expect(targets.some((target) => target.expr === "sum((loopover_jobs_maintenance_trickle_admitted_persisted_total or gittensory_jobs_maintenance_trickle_admitted_persisted_total)) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === 'sum((loopover_orb_relay_register_total or gittensory_orb_relay_register_total){result="failed"}) or vector(0)')).toBe(true);
+    expect(targets.some((target) => target.expr === 'sum((loopover_installation_health_broker_probe_total or gittensory_installation_health_broker_probe_total){result="failed"}) or vector(0)')).toBe(true);
     expect(targets.some((target) => target.expr === "sum(loopover_agent_action_permission_denied_total) or vector(0)")).toBe(true);
     // Grouped (sum-by) queries must NOT have "or vector(0)": Prometheus's `or` unions result sets, and
     // vector(0) is a single unlabeled series that can't match the actionClass/mode,result label set --
     // that renders a bogus extra unlabeled zero-series alongside the real labeled series (gate finding).
     expect(targets.some((target) => target.expr === "sum by (actionClass) (rate(loopover_agent_action_permission_denied_total[5m]))")).toBe(true);
     expect(targets.some((target) => target.expr === "sum by (actionClass) (rate(loopover_agent_action_permission_denied_suppressed_total[5m]))")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (mode, result) (rate(loopover_orb_relay_register_total[5m]))")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (mode, result) ((rate(loopover_orb_relay_register_total[5m]) or rate(gittensory_orb_relay_register_total[5m])))")).toBe(true);
     // #selfhost-runtime-drift follow-up: the streak-vs-drain-progress panel is the dashboard-visible
     // counterpart to isOrbRelayRegistrationAlerting's gate -- a lone registration timeout must not read as
     // a dashboard error on its own as long as the drain loop is still making progress.
-    expect(targets.some((target) => target.expr === "loopover_orb_relay_register_consecutive_failures or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "loopover_orb_relay_drain_seconds_since_last or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_orb_relay_register_consecutive_failures or gittensory_orb_relay_register_consecutive_failures) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_orb_relay_drain_seconds_since_last or gittensory_orb_relay_drain_seconds_since_last) or vector(0)")).toBe(true);
 
     const alerts = readFileSync(selfhostAlertsPath, "utf8");
     expect(alerts).toContain("alert: LoopoverOrbRelayRegistrationStuck");
@@ -283,12 +283,12 @@ describe("Loopover Self-Host Grafana dashboard", () => {
         "Top Repos by Backlog Depth",
       ]),
     );
-    expect(targets.some((target) => target.expr === "loopover_queue_backlog_convergence_pending")).toBe(true);
-    expect(targets.some((target) => target.expr === "loopover_queue_fresh_intake_pending")).toBe(true);
-    expect(targets.some((target) => target.expr === "loopover_github_rest_rate_limit_remaining")).toBe(true);
-    expect(targets.some((target) => target.legendFormat === "{{key_scope}}" && target.expr === "loopover_github_rest_rate_limit_remaining")).toBe(true);
-    expect(targets.some((target) => target.expr === "sum by (lane) (rate(loopover_jobs_claimed_by_lane_total[5m])) or vector(0)")).toBe(true);
-    expect(targets.some((target) => target.expr === "loopover_queue_backlog_by_repo" && target.format === "table" && target.instant === true)).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_queue_backlog_convergence_pending or gittensory_queue_backlog_convergence_pending)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_queue_fresh_intake_pending or gittensory_queue_fresh_intake_pending)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_github_rest_rate_limit_remaining or gittensory_github_rest_rate_limit_remaining)")).toBe(true);
+    expect(targets.some((target) => target.legendFormat === "{{key_scope}}" && target.expr === "(loopover_github_rest_rate_limit_remaining or gittensory_github_rest_rate_limit_remaining)")).toBe(true);
+    expect(targets.some((target) => target.expr === "sum by (lane) ((rate(loopover_jobs_claimed_by_lane_total[5m]) or rate(gittensory_jobs_claimed_by_lane_total[5m]))) or vector(0)")).toBe(true);
+    expect(targets.some((target) => target.expr === "(loopover_queue_backlog_by_repo or gittensory_queue_backlog_by_repo)" && target.format === "table" && target.instant === true)).toBe(true);
   });
 });
 
