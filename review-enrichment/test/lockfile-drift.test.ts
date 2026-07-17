@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { extractLockfileChanges } from "../dist/analyzers/lockfile-drift.js";
+import { extractLockfileChanges, queryOsvBatch } from "../dist/analyzers/lockfile-drift.js";
+import { createAnalysisContext } from "../dist/analysis-context.js";
+
+const jsonResponse = (body, init = {}) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+    ...init,
+  });
 
 test("extractLockfileChanges matches lockfile basenames case-insensitively", () => {
   const changes = extractLockfileChanges([
@@ -251,4 +259,120 @@ test("extractLockfileChanges skips malformed/partial lockfile hunks rather than 
   ]);
 
   assert.deepEqual(changes, []);
+});
+
+test("queryOsvBatch falls back to per-item OSV queries when a batch chunk fails, instead of dropping the whole chunk", async () => {
+  // Mirrors dependency-scan.ts's own batch-failure fallback (scanDependencyChanges falls back to direct
+  // OSV queries after an oversized batch response, test/analysis-context.test.ts): a failed /v1/querybatch
+  // chunk must degrade to per-change /v1/query calls, not silently drop every finding in the chunk.
+  let batchCalls = 0;
+  const directPackages = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (String(url) === "https://api.osv.dev/v1/querybatch") {
+      batchCalls += 1;
+      return new Response("Internal Server Error", { status: 500 });
+    }
+    assert.equal(String(url), "https://api.osv.dev/v1/query");
+    const body = JSON.parse(String(init.body));
+    directPackages.push(body.package.name);
+    return jsonResponse({
+      vulns:
+        body.package.name === "lodash"
+          ? [
+              {
+                id: "GHSA-lockfile-fallback",
+                summary: "lockfile drift fallback advisory",
+                database_specific: { severity: "HIGH" },
+              },
+            ]
+          : [],
+    });
+  };
+  const changes = [
+    { file: "package-lock.json", line: 5, ecosystem: "npm", package: "lodash", from: "4.17.20", to: "4.17.21" },
+    { file: "package-lock.json", line: 9, ecosystem: "npm", package: "axios", from: "1.6.0", to: "1.6.1" },
+  ];
+
+  const cvesByKey = await queryOsvBatch(changes, fetchImpl);
+
+  assert.equal(batchCalls, 1);
+  assert.deepEqual(directPackages, ["lodash", "axios"]);
+  assert.equal(cvesByKey.size, 2);
+  const lodashCves = cvesByKey.get("npm::lodash@4.17.21");
+  assert.equal(lodashCves?.length, 1);
+  assert.equal(lodashCves?.[0]?.id, "GHSA-lockfile-fallback");
+  assert.deepEqual(cvesByKey.get("npm::axios@1.6.1"), []);
+});
+
+test("queryOsvBatch's per-item fallback still returns empty (never throws) when the direct query also fails", async () => {
+  const fetchImpl = async () => new Response("Internal Server Error", { status: 500 });
+  const changes = [
+    { file: "package-lock.json", line: 5, ecosystem: "npm", package: "lodash", from: "4.17.20", to: "4.17.21" },
+  ];
+
+  const cvesByKey = await queryOsvBatch(changes, fetchImpl);
+
+  assert.deepEqual(cvesByKey.get("npm::lodash@4.17.21"), []);
+});
+
+test("queryOsvBatch's per-item fallback routes through the request-scoped analysis context (cache/metrics), honoring a custom maxOsvQueries limit", async () => {
+  const context = createAnalysisContext({
+    repoFullName: "JSONbored/loopover",
+    prNumber: 1810,
+  });
+  let batchCalls = 0;
+  const directPackages = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (String(url) === "https://api.osv.dev/v1/querybatch") {
+      batchCalls += 1;
+      return new Response("Internal Server Error", { status: 500 });
+    }
+    assert.equal(String(url), "https://api.osv.dev/v1/query");
+    const body = JSON.parse(String(init.body));
+    directPackages.push(body.package.name);
+    return jsonResponse({ vulns: [] });
+  };
+  const changes = [
+    { file: "package-lock.json", line: 5, ecosystem: "npm", package: "lodash", from: "4.17.20", to: "4.17.21" },
+  ];
+
+  const cvesByKey = await queryOsvBatch(changes, fetchImpl, undefined, {
+    analysis: context,
+    limits: { maxOsvQueries: 5 },
+  });
+
+  assert.equal(batchCalls, 1);
+  assert.deepEqual(directPackages, ["lodash"]);
+  assert.deepEqual(cvesByKey.get("npm::lodash@4.17.21"), []);
+  assert.deepEqual(context.snapshotMetrics().externalCallsByCategory, {
+    "osv-querybatch": 1,
+    "osv-query": 1,
+  });
+});
+
+test("queryOsvBatch's per-item fallback stops issuing direct queries once the signal is aborted mid-chunk", async () => {
+  const controller = new AbortController();
+  const directPackages = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (String(url) === "https://api.osv.dev/v1/querybatch") {
+      return new Response("Internal Server Error", { status: 500 });
+    }
+    const body = JSON.parse(String(init.body));
+    directPackages.push(body.package.name);
+    // Abort AFTER the first per-item request is issued but before the fallback loop reaches the
+    // second change -- exercises fetchOsvDirect's own `if (signal?.aborted) return [];` guard.
+    controller.abort();
+    return jsonResponse({ vulns: [] });
+  };
+  const changes = [
+    { file: "package-lock.json", line: 5, ecosystem: "npm", package: "lodash", from: "4.17.20", to: "4.17.21" },
+    { file: "package-lock.json", line: 9, ecosystem: "npm", package: "axios", from: "1.6.0", to: "1.6.1" },
+  ];
+
+  const cvesByKey = await queryOsvBatch(changes, fetchImpl, controller.signal);
+
+  assert.deepEqual(directPackages, ["lodash"]);
+  assert.deepEqual(cvesByKey.get("npm::lodash@4.17.21"), []);
+  assert.equal(cvesByKey.has("npm::axios@1.6.1"), true);
+  assert.deepEqual(cvesByKey.get("npm::axios@1.6.1"), []);
 });

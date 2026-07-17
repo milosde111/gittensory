@@ -54,6 +54,7 @@ const MAX_LOCKFILE_FILES = 12;
 const MAX_PATCH_LINES_PER_FILE = 1200;
 const MAX_OSV_QUERIES = 40;
 const LOCKFILE_OSV_BATCH_CHUNK_SIZE = 10;
+const LOCKFILE_OSV_QUERY_MAX_BYTES = 512 * 1024;
 const VERSION_SAFE_RE = /^[0-9][0-9A-Za-z._+-]*$/;
 const MAX_PACKAGE_LEN = 200;
 const MAX_VERSION_LEN = 100;
@@ -384,6 +385,44 @@ export function extractLockfileChanges(
   return changes;
 }
 
+/** Single-item OSV.dev fallback for a lockfile resolution whose batch chunk failed. Mirrors
+ *  dependency-scan.ts's fetchOsvDirect so a transient/oversized batch response degrades to per-item
+ *  queries instead of silently dropping the whole chunk's findings. */
+async function fetchOsvDirect(
+  ecosystem: string,
+  name: string,
+  version: string,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal | undefined,
+  options: Pick<ScanOptions, "analysis" | "diagnostics" | "limits">,
+): Promise<Cve[]> {
+  if (signal?.aborted) return [];
+  const fetchOptions = {
+    endpointCategory: "osv-query",
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ package: { name, ecosystem }, version }),
+    signal,
+    fetchImpl,
+    diagnostics: options.diagnostics,
+    phase: "lockfile-drift",
+    subcall: "osv-query",
+    maxBytes: LOCKFILE_OSV_QUERY_MAX_BYTES,
+    maxCallsPerCategory: options.limits?.maxOsvQueries ?? MAX_OSV_QUERIES,
+  };
+  const response = options.analysis
+    ? await options.analysis.fetchJson<{ vulns?: OsvVuln[] }>(
+        "https://api.osv.dev/v1/query",
+        fetchOptions,
+      )
+    : await boundedFetchJson<{ vulns?: OsvVuln[] }>(
+        "https://api.osv.dev/v1/query",
+        fetchOptions,
+      );
+  if (!response.ok) return [];
+  return toCves(response.data.vulns);
+}
+
 /** Batch-query OSV.dev for lockfile resolutions. Best-effort: returns empty CVE arrays on any failure. */
 export async function queryOsvBatch(
   changes: LockfileChange[],
@@ -422,7 +461,20 @@ export async function queryOsvBatch(
       : await boundedFetchJson<{
         results?: Array<{ vulns?: OsvVuln[] }>;
       }>("https://api.osv.dev/v1/querybatch", fetchOptions);
-    if (!response.ok) continue;
+    if (!response.ok) {
+      for (const change of chunk) {
+        const cves = await fetchOsvDirect(
+          change.ecosystem,
+          change.package,
+          change.to,
+          fetchImpl,
+          signal,
+          options,
+        );
+        results.set(`${change.ecosystem}::${change.package}@${change.to}`, cves);
+      }
+      continue;
+    }
     chunk.forEach((change, index) => {
       results.set(
         `${change.ecosystem}::${change.package}@${change.to}`,
