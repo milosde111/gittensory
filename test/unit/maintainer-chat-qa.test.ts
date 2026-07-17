@@ -203,4 +203,16 @@ describe("POST /v1/repos/:owner/:repo/pulls/:number/chat-qa (#6489)", () => {
     // maybeThrottleLoopOverCommand's own ordering: 1 pre-seeded + 2 from this test's own requests.
     expect(invocationRows?.n).toBe(3);
   });
+
+  it("surfaces chatQaEnabled=true on maintainer-dashboard reviewability when .loopover.yml opts into chatQa", async () => {
+    const env = createTestEnv({ ADMIN_GITHUB_LOGINS: "" });
+    await seedRepoWithPull(env);
+    await env.DB.prepare("UPDATE repositories SET is_registered = 1 WHERE full_name = ?").bind("owner/repo").run();
+    stubChatQaManifestFetch();
+    const { token } = await createSessionForGitHubUser(env, { login: "owner", id: 1 });
+    const res = await app.request("/v1/app/maintainer-dashboard", { headers: { cookie: `loopover_session=${token}` } }, env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { reviewability: Array<{ pr: string; chatQaEnabled: boolean }> };
+    expect(body.reviewability).toEqual(expect.arrayContaining([expect.objectContaining({ pr: "owner/repo#11", chatQaEnabled: true })]));
+  });
 });
