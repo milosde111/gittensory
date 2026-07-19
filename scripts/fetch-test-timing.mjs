@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+// Fetches per-test-file historical duration data from Codecov's Test Analytics API and aggregates it
+// into a per-file average, for the test-shard bin-packer (scripts/compute-test-shards.mjs) to consume.
+// Codecov already ingests a JUnit report per shard on every push to main (see ci.yml's coverage-upload
+// steps, report_type: test_results) and pools it across runs -- this reads that pooled history back
+// out instead of this repo tracking its own duration history from scratch.
+//
+// Filtered to branch=main deliberately: a PR's own JUnit upload is override_branch'd to that PR's own
+// branch name (see ci.yml's upload steps), not "main" -- so branch=main naturally selects only
+// push-triggered, full-unscoped-suite runs, which is exactly the population the shard bin-packer needs
+// (duration-aware sharding only applies to the full-suite case; see compute-test-shards.mjs).
+//
+// Requires a Codecov personal API access token (Codecov Settings -> Access -> Generate Token), NOT the
+// existing CODECOV_TOKEN secret -- that one is an upload-only token and doesn't authenticate this read
+// API. Codecov's docs don't publish a numeric rate limit for this endpoint, so this is deliberately run
+// on a schedule (test-timing-refresh.yml), not per-PR.
+
+import { writeFileSync } from "node:fs";
+
+const MAX_PAGES = Number(process.argv.find((a) => a.startsWith("--max-pages="))?.split("=")[1] ?? 20);
+const outputArg = process.argv.find((a) => a.startsWith("--output="));
+const OUTPUT_PATH = outputArg ? outputArg.split("=")[1] : null;
+
+const repo = process.env.GITHUB_REPOSITORY;
+if (!repo) throw new Error("GITHUB_REPOSITORY is required (e.g. JSONbored/loopover)");
+const [owner, repoName] = repo.split("/");
+const token = process.env.CODECOV_API_TOKEN;
+if (!token) throw new Error("CODECOV_API_TOKEN is required");
+
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+async function fetchWithRetry(url, maxAttempts = 4) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(url, {
+      headers: { Authorization: `bearer ${token}`, Accept: "application/json" },
+    });
+    if (response.ok) return response.json();
+    if (!RETRYABLE_STATUS.has(response.status) || attempt === maxAttempts) {
+      throw new Error(`Codecov API error ${response.status} on ${url}: ${await response.text()}`);
+    }
+    const delayMs = 2 ** attempt * 1000;
+    console.warn(`Codecov API returned ${response.status} (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new Error("unreachable");
+}
+
+async function fetchAllTestRuns() {
+  const rows = [];
+  let url = `https://api.codecov.io/api/v2/gh/${owner}/repos/${repoName}/test-results/?branch=main&page_size=100`;
+  let pages = 0;
+  while (url && pages < MAX_PAGES) {
+    const body = await fetchWithRetry(url);
+    rows.push(...body.results);
+    url = body.next;
+    pages += 1;
+  }
+  return { rows, truncated: url !== null };
+}
+
+function aggregateByFile(rows) {
+  // Per-file duration must be averaged ACROSS RUNS, not just summed across every row: a file with many
+  // test cases would otherwise dwarf a file with few, and a file that appears in many historical rows
+  // (many runs) would inflate further with each additional run pooled in -- neither reflects "how long
+  // does this file actually take in a single run." So first sum each file's rows *within* a single
+  // commit (that commit's real per-run file duration), then average those per-commit totals across all
+  // commits the file appears in.
+  const perCommitTotals = new Map(); // filename -> Map(commit_sha -> totalSeconds)
+  for (const row of rows) {
+    if (!row.filename || row.duration_seconds == null) continue;
+    if (!perCommitTotals.has(row.filename)) perCommitTotals.set(row.filename, new Map());
+    const commits = perCommitTotals.get(row.filename);
+    commits.set(row.commit_sha, (commits.get(row.commit_sha) ?? 0) + row.duration_seconds);
+  }
+
+  const averages = {};
+  for (const [filename, commits] of perCommitTotals) {
+    const totals = [...commits.values()];
+    averages[filename] = totals.reduce((sum, value) => sum + value, 0) / totals.length;
+  }
+  return averages;
+}
+
+const { rows, truncated } = await fetchAllTestRuns();
+const averageSecondsByFile = aggregateByFile(rows);
+
+const report = {
+  fetchedAt: new Date().toISOString(),
+  sourceRowCount: rows.length,
+  fileCount: Object.keys(averageSecondsByFile).length,
+  truncated, // true if MAX_PAGES was hit before the API ran out of pages -- more history existed than was pulled
+  averageSecondsByFile,
+};
+
+const json = JSON.stringify(report, null, 2);
+if (OUTPUT_PATH) {
+  writeFileSync(OUTPUT_PATH, json);
+  console.log(`Wrote ${report.fileCount} files' timing data (from ${report.sourceRowCount} rows) to ${OUTPUT_PATH}`);
+} else {
+  process.stdout.write(`${json}\n`);
+}
