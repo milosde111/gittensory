@@ -370,8 +370,23 @@ jobs:
       # since turbo's cache directory grows additively rather than being wholesale-replaced per lockfile hash.
       # This is also what lets each validate-tests shard (which independently needs this same package built)
       # skip rebuilding it from scratch when a warm cache from this job or an earlier run is available.
+      #
+      # Gate includes mcp/miner (not just backend/engine/ui) even though "Build engine package" below stays
+      # scoped to backend/engine/ui: "Build MCP"/"Build miner CLI" further down invoke turbo too, and since
+      # both packages declare @loopover/engine as a package.json dependency, turbo's own ^build resolution
+      # builds engine as their transitive dependency regardless of whether this explicit step ran. Without
+      # this wider gate, an mcp- or miner-only PR would still get a correct build (turbo builds it inline
+      # with no cache to hit) -- just a cold one, and with no save step to persist it either.
+      #
+      # The matching "Save Turborepo cache" step is NOT alongside this one -- it's moved all the way down
+      # to after "UI build" (the last step in this job that invokes turbo), since actions/cache/save takes
+      # one synchronous snapshot at the moment it runs and every later turbo-routed step in between (Build
+      # MCP, Build miner CLI, Build UI-kit package, UI lint/typecheck, Extension lint/typecheck, UI build)
+      # would otherwise write to .turbo/cache AFTER the snapshot already happened, so none of their cache
+      # entries would ever persist cross-run. Confirmed this was a real gap (not just theoretical) by
+      # reading the actual step order before moving it.
       - name: Restore Turborepo cache
-        if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.ui == 'true' }}
+        if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.miner == 'true' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
@@ -381,12 +396,6 @@ jobs:
       - name: Build engine package
         if: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.ui == 'true' }}
         run: npx turbo run build --filter=@loopover/engine
-      - name: Save Turborepo cache
-        if: ${{ !cancelled() && (github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.ui == 'true') }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo/cache
-          key: turbo-${{ hashFiles('package-lock.json') }}-${{ github.run_id }}
       # .tsbuildinfo mutates every run (tsc's own incremental state), unlike node_modules above which is
       # immutable per lockfile -- so this needs the run_id-suffixed-key + restore-keys-prefix pattern (always
       # creates a new cache entry to save into, restore falls back to the most recent matching prefix) rather
@@ -416,17 +425,39 @@ jobs:
       # loopover-mcp now depends on @loopover/engine for real (isTestFile/isCodeFile), so a
       # PR that only touches packages/loopover-engine/** must also rebuild + pack-check the mcp package,
       # not just the mcp filter's own (deliberately narrower) path list.
+      #
+      # Routed through Turborepo (turbo.json's @loopover/mcp#build, dependsOn ["^build"]) rather than the
+      # old npm run build:mcp -- turbo resolves @loopover/engine as its topological dependency (mcp's own
+      # package.json depends on @loopover/engine) and reuses the "Restore Turborepo cache" above, so an
+      # engine-only PR's already-built engine is never rebuilt a second time here.
       - name: Build MCP
         if: ${{ github.event_name == 'push' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.engine == 'true' }}
-        run: npm run build:mcp
+        run: npx turbo run build --filter=@loopover/mcp
       - name: MCP package check
         if: ${{ github.event_name == 'push' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.engine == 'true' }}
         run: npm run test:mcp-pack
+      # Invokes turbo.json's @loopover/miner#build:tsc (cache: false, since its committed lib/**/*.js
+      # output can't be safely restored without risking a stomp of hand-written files) and
+      # @loopover/miner#build:verify (real caching win: skips re-`node --check`-ing all 121 bin/lib files
+      # when neither changed) DIRECTLY as their own task names, deliberately NOT via the aggregate
+      # `@loopover/miner#build` task (which exists for standalone/local `npm run build` callers) -- that
+      # aggregate's own script is `npm run build:tsc && npm run build:verify`, i.e. it re-invokes both of
+      # these exact scripts a second time even when turbo already ran them as cached prerequisite tasks
+      # (declaring a task as a dependsOn prerequisite doesn't replace a parent task's own script body).
+      # Calling the aggregate here would silently double both the tsc compile and the syntax check on
+      # every run, negating the caching win this comment describes -- confirmed by reproducing the double
+      # execution locally before switching to this direct form. This also finally activates the
+      # build:tsc/build:verify split from Phase 0, which no ci.yml step exercised until now.
       - name: Build miner CLI
-        if: ${{ github.event_name == 'push' || needs.changes.outputs.miner == 'true' }}
-        run: npm run build:miner
+        if: ${{ github.event_name == 'push' || needs.changes.outputs.miner == 'true' || needs.changes.outputs.engine == 'true' }}
+        run: npx turbo run build:tsc build:verify --filter=@loopover/miner
+      # loopover-miner depends on @loopover/engine for real too (same relationship as loopover-mcp above
+      # -- packages/loopover-miner/package.json lists it as a dependency), so this and "Build miner CLI"
+      # above now also trigger on an engine-only PR, matching "Build MCP"/"MCP package check"'s existing
+      # engine coupling. Pre-existing asymmetry, not introduced by this change -- fixed here while already
+      # touching these exact lines.
       - name: Miner package check
-        if: ${{ github.event_name == 'push' || needs.changes.outputs.miner == 'true' }}
+        if: ${{ github.event_name == 'push' || needs.changes.outputs.miner == 'true' || needs.changes.outputs.engine == 'true' }}
         run: npm run test:miner-pack
       - name: Miner deployment docs audit
         if: ${{ github.event_name == 'push' || needs.changes.outputs.miner == 'true' }}
@@ -521,7 +552,7 @@ jobs:
       # job, so building it here once covers all four.
       - name: Build UI-kit package
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm run ui:kit:build
+        run: npx turbo run build --filter=@loopover/ui-kit
       # apps/loopover-ui's fumadocs-mdx virtual modules (collections/browser, collections/server, imported by
       # docs-client-loader.tsx/docs-source.ts) are gitignored generated output, normally produced by npm ci's
       # own `postinstall` hook -- but "Install dependencies" above is SKIPPED on a node_modules cache hit (the
@@ -532,38 +563,61 @@ jobs:
       - name: Generate docs content collections
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
         run: npm run postinstall --workspace @loopover/ui
-      # ui:lint/ui:typecheck/ui:test (package.json) each independently re-run ui:kit:build as their own
-      # first step -- correct as standalone, portable scripts (nothing else in a bare `npm run ui:lint`
-      # invocation would have built ui-kit first), but redundant here specifically: "Build UI-kit package"
-      # above already built it once for all four of lint/typecheck/tests/build in this same job. Same
-      # "call the underlying subcommands directly, skip the redundant rebuild" fix "UI build" below
-      # already applies -- deliberately NOT changing the package.json scripts themselves, since
-      # ui-deploy.yml and CONTRIBUTING.md's documented local gate sequence both call ui:lint/ui:typecheck
-      # directly with no prior ui-kit build step and rely on that self-sufficiency.
+      # Routed through Turborepo -- "Build UI-kit package" above already built ui-kit's dist once for all of
+      # lint/typecheck/tests/build in this same job (GitHub Actions steps run strictly sequentially), so
+      # these turbo invocations reuse it without needing @loopover/ui#lint/@loopover/ui-miner#lint to
+      # declare their own ^build dependsOn (they intentionally don't -- eslint needs no compiled dist).
+      # Two --filter flags means "either package" (union), not intersection; both packages' tasks run
+      # even if one fails, so a failing @loopover/ui lint no longer hides an @loopover/ui-miner lint error
+      # behind it the way the old `&&` chain did -- both surface in one pass. Deliberately NOT changing the
+      # package.json ui:lint/ui:typecheck scripts themselves, since ui-deploy.yml and CONTRIBUTING.md's
+      # documented local gate sequence both call those directly and rely on their own ui:kit:build prefix.
       - name: UI lint
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm --workspace @loopover/ui run lint && npm --workspace @loopover/ui-miner run lint
+        run: npx turbo run lint --filter=@loopover/ui --filter=@loopover/ui-miner
       - name: UI typecheck
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm --workspace @loopover/ui run typecheck && npm --workspace @loopover/ui-miner run typecheck
+        run: npx turbo run typecheck --filter=@loopover/ui --filter=@loopover/ui-miner
       - name: UI tests
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
         run: npm --workspace @loopover/ui run test && npm --workspace @loopover/ui-miner run test && npm --workspace @loopover/miner-extension run test
+      # Same rationale and --filter union semantics as "UI lint"/"UI typecheck" above.
       - name: Extension lint
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm run extension:lint && npm run miner-extension:lint
+        run: npx turbo run lint --filter=@loopover/extension --filter=@loopover/miner-extension
       - name: Extension typecheck
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm run extension:typecheck && npm run miner-extension:typecheck
+        run: npx turbo run typecheck --filter=@loopover/extension --filter=@loopover/miner-extension
       # `npm run ui:build` also regenerates apps/loopover-ui/public/openapi.json (needed for a
       # standalone build), but this step's trigger condition is a strict subset of "OpenAPI drift
       # check" above (push || ui==true, vs. push || ui==true || uiContract==true), so whenever this
       # step runs, that check already ran and passed in this same job -- the committed spec is
-      # already byte-identical to what regenerating it here would produce. Run ui:build's other two
-      # steps directly instead of the aggregate script, skipping that redundant regen.
+      # already byte-identical to what regenerating it here would produce. apps/loopover-ui's own
+      # `build` script (vite build) doesn't touch openapi.json either, so routing through Turborepo
+      # preserves that skip: @loopover/ui#build's dependsOn (turbo.json) is
+      # ["^build", "@loopover/extension#build", "@loopover/miner-extension#build"] -- the exact same
+      # extension + miner-extension build pair this step ran explicitly before, now resolved by turbo's
+      # own graph instead of hand-chained `&&`, plus ^build (ui-kit, already a same-job cache hit from
+      # "Build UI-kit package" above). Verified locally: deleting the committed-gitignored extension zip
+      # and running this exact invocation regenerates it correctly (the cross-package outputs edge is
+      # honored, not just replayed from cache).
       - name: UI build
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm run extension:build && npm run miner-extension:build && npm --workspace @loopover/ui run build
+        run: npx turbo run build --filter=@loopover/ui
+      # Paired with "Restore Turborepo cache" above (same key, same gate condition) -- deliberately
+      # positioned here, after every turbo-routed step in this job (Build engine package, Build MCP, Build
+      # miner CLI, Build UI-kit package, UI lint/typecheck, Extension lint/typecheck, UI build), rather than
+      # immediately after "Build engine package" the way it was originally: actions/cache/save takes one
+      # synchronous snapshot at the moment it runs, so anything written to .turbo/cache by a later step
+      # would never be captured if this ran earlier. `!cancelled()` (not `always()`) still saves whatever
+      # was successfully built even if an earlier step in this job failed, as long as the job wasn't
+      # cancelled outright.
+      - name: Save Turborepo cache
+        if: ${{ !cancelled() && (github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.engine == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.miner == 'true') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ hashFiles('package-lock.json') }}-${{ github.run_id }}
       # Bundle-size regression tracking for the deployed marketing/product site (loopover-ui only --
       # loopover-miner-ui is a self-hosted operator dashboard with no build step in this job at all, see
       # "UI build" above). Fork-excluded (no secrets.CODECOV_TOKEN on a fork PR, same boundary as the

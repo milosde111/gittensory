@@ -19,7 +19,9 @@ describe("CI engine/miner path filters", () => {
     // shared across validate-code and every validate-tests shard instead of rebuilding independently in
     // each -- see the "Restore/Save Turborepo cache" steps alongside this one.
     expect(ci).toContain("turbo run build --filter=@loopover/engine");
-    expect(ci).toContain("npm run build:miner");
+    // Invokes build:tsc/build:verify directly (not the aggregate @loopover/miner#build task) -- the
+    // aggregate's own script re-runs both, which would double the tsc compile and syntax check every run.
+    expect(ci).toContain("turbo run build:tsc build:verify --filter=@loopover/miner");
     expect(ci).toContain("npm run test:miner-pack");
   });
 });

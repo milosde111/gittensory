@@ -5,19 +5,20 @@ const read = (path: string) => readFileSync(path, "utf8");
 
 // `npm run ui:build` also regenerates apps/loopover-ui/public/openapi.json. Both call sites below
 // chain it immediately after `ui:openapi:check`, which just proved the committed spec is already fresh --
-// regenerating it again is pure repeat work. These assert the two split commands stay in place instead of
-// the aggregate `ui:build` script sneaking back in (ui:build itself is untouched for standalone callers).
+// regenerating it again is pure repeat work. These assert the split commands (or their Turborepo
+// equivalent) stay in place instead of the aggregate `ui:build` script sneaking back in (ui:build itself
+// is untouched for standalone callers).
 describe("UI build steps skip the redundant OpenAPI regen", () => {
-  it("ci.yml's UI build step runs the split commands, not the aggregate ui:build script", () => {
+  it("ci.yml's UI build step runs through Turborepo, not the aggregate ui:build script", () => {
     const workflow = read(".github/workflows/ci.yml");
     const stepStart = workflow.indexOf("- name: UI build");
     expect(stepStart).toBeGreaterThan(-1);
     const stepEnd = workflow.indexOf("\n\n", stepStart);
     const step = workflow.slice(stepStart, stepEnd === -1 ? undefined : stepEnd);
 
-    expect(step).toContain(
-      "run: npm run extension:build && npm run miner-extension:build && npm --workspace @loopover/ui run build",
-    );
+    // @loopover/ui#build's dependsOn (turbo.json) covers the same extension + miner-extension build pair
+    // the old hand-chained `&&` command ran explicitly -- see turbo.json's comment on that task.
+    expect(step).toContain("run: npx turbo run build --filter=@loopover/ui");
     expect(step).not.toContain("npm run ui:build");
   });
 
