@@ -2986,13 +2986,14 @@ async function runAgentMaintenancePlanAndExecute(
     env,
     repoFullName,
   );
+  // Issue numbers are derived inside resolveLinkedIssueHardRule from a fresh body parse (#8354) — do not pass
+  // pr.linkedIssues here; that synced field can lag a body edit and disagree with the overflow check.
   const liveLinkedIssueHardRule = await resolveLinkedIssueHardRule({
     env,
     repoFullName,
     repoOwner,
     config: linkedIssueRulesConfig,
     body: pr.body,
-    linkedIssues: pr.linkedIssues,
     ciToken,
     prAuthorLogin: pr.authorLogin,
     installationId,

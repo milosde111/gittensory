@@ -464,14 +464,14 @@ describe("evaluateLinkedIssueHardRules with explicit config", () => {
 describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () => {
   afterEach(() => vi.unstubAllGlobals());
   // Defaults: body=null and ciToken=undefined so the `?? ""` and `?? env.GITHUB_PUBLIC_TOKEN` fallbacks are
-  // exercised; tests that need the other arm pass a string body / a CI token explicitly.
+  // exercised; tests that need the other arm pass a string body / a CI token explicitly. Issue numbers are
+  // always derived from a fresh body parse (#8354) — there is no separately-supplied linkedIssues list.
   const args = (over: Record<string, unknown> = {}) => ({
     env: createTestEnv({}),
     repoFullName: "owner/repo",
     repoOwner: "owner",
     config: config(),
     body: null as string | null | undefined,
-    linkedIssues: [] as number[],
     ciToken: undefined as string | undefined,
     ...over,
   });
@@ -479,7 +479,7 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
   it("returns undefined and fetches nothing when no rule is in block mode", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    expect(await resolveLinkedIssueHardRule(args({ config: config(), body: "closes #1", linkedIssues: [1] }))).toBeUndefined();
+    expect(await resolveLinkedIssueHardRule(args({ config: config(), body: "closes #1" }))).toBeUndefined();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -487,14 +487,14 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const body = Array.from({ length: 60 }, (_, i) => `closes #${i + 1}`).join(" ");
-    const r = await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), body, linkedIssues: [1] }));
+    const r = await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), body }));
     expect(r?.violated).toBe(true);
     expect(r?.reason).toMatch(/more issues than LoopOver can safely verify/i);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("returns undefined when a rule is on but the PR links no issues (null body → no overflow)", async () => {
-    expect(await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), body: null, linkedIssues: [] }))).toBeUndefined();
+    expect(await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), body: null }))).toBeUndefined();
   });
 
   it("treats a confirmed-nonexistent linked issue as a violation, not a silent pass (#2136)", async () => {
@@ -502,7 +502,9 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
     // transient error — a contributor citing a fabricated issue number must not silently satisfy the hard rule
     // the same way a genuine fetch outage fails open.
     vi.stubGlobal("fetch", async () => new Response("missing", { status: 404 }));
-    const r = await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "installation-token", linkedIssues: [1, 2] }));
+    const r = await resolveLinkedIssueHardRule(
+      args({ config: config({ ownerAssignedClose: "block" }), ciToken: "installation-token", body: "closes #1 closes #2" }),
+    );
     expect(r?.violated).toBe(true);
     expect(r?.reason).toMatch(/could not be found/i);
   });
@@ -513,20 +515,26 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
     // repo access — closing the PR here would risk punishing a contributor for a real linked issue our token
     // just can't see.
     vi.stubGlobal("fetch", async () => new Response("missing", { status: 404 }));
-    const r = await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: undefined, linkedIssues: [1, 2] }));
+    const r = await resolveLinkedIssueHardRule(
+      args({ config: config({ ownerAssignedClose: "block" }), ciToken: undefined, body: "closes #1 closes #2" }),
+    );
     expect(r).toBeUndefined();
   });
 
   it("still fails open (undefined) when a linked-issue fetch fails transiently (5xx), not confirmed-nonexistent", async () => {
     vi.stubGlobal("fetch", async () => new Response("server error", { status: 500 }));
-    expect(await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", linkedIssues: [1, 2] }))).toBeUndefined();
+    expect(
+      await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", body: "closes #1 closes #2" })),
+    ).toBeUndefined();
   });
 
   it("fails open when the linked issues are a MIX of confirmed-not-found and a transient fetch error", async () => {
     // Cannot rule out a real, rule-violating issue behind the transient failure — must not treat this the same
     // as an all-confirmed-not-found set.
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => (input.toString().endsWith("/issues/1") ? new Response("missing", { status: 404 }) : new Response("server error", { status: 500 })));
-    expect(await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", linkedIssues: [1, 2] }))).toBeUndefined();
+    expect(
+      await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", body: "closes #1 closes #2" })),
+    ).toBeUndefined();
   });
 
   it("fetches with the CI token and runs the deterministic evaluator over the facts", async () => {
@@ -535,7 +543,7 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
         ? Response.json({ number: 1, state: "open", labels: [], assignees: ["owner"] })
         : new Response("missing", { status: 404 }),
     );
-    const r = await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", body: "closes #1", linkedIssues: [1] }));
+    const r = await resolveLinkedIssueHardRule(args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", body: "closes #1" }));
     expect(r).toBeDefined();
     expect(typeof r?.violated).toBe("boolean");
   });
@@ -547,7 +555,7 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
         : new Response("missing", { status: 404 }),
     );
     const blocked = await resolveLinkedIssueHardRule(
-      args({ config: config({ assignedIssueClose: "block" }), ciToken: "tok", body: "closes #1", linkedIssues: [1], prAuthorLogin: "drive-by" }),
+      args({ config: config({ assignedIssueClose: "block" }), ciToken: "tok", body: "closes #1", prAuthorLogin: "drive-by" }),
     );
     expect(blocked).toEqual({
       violated: true,
@@ -555,7 +563,7 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
     });
 
     const assignee = await resolveLinkedIssueHardRule(
-      args({ config: config({ assignedIssueClose: "block" }), ciToken: "tok", body: "closes #1", linkedIssues: [1], prAuthorLogin: "claimed-dev" }),
+      args({ config: config({ assignedIssueClose: "block" }), ciToken: "tok", body: "closes #1", prAuthorLogin: "claimed-dev" }),
     );
     expect(assignee).toEqual({ violated: false, reason: null });
   });
@@ -563,11 +571,32 @@ describe("resolveLinkedIssueHardRule (#1144 — overflow + orchestration)", () =
   it("derives the installation admission key from the ci token + installation id so installation reads attribute to the installation bucket, not 'unknown' (#1951 blocker)", async () => {
     const spy = vi.spyOn(backfillModule, "fetchLinkedIssueFacts").mockResolvedValue({ status: "fetch_error" });
     await resolveLinkedIssueHardRule(
-      args({ config: config({ ownerAssignedClose: "block" }), ciToken: "installation-token", installationId: 143010787, linkedIssues: [7] }),
+      args({ config: config({ ownerAssignedClose: "block" }), ciToken: "installation-token", installationId: 143010787, body: "closes #7" }),
     );
     // The key is DERIVED from the token it will actually read with (so it can never drift): a non-public token +
     // finite installation id ⇒ the installation bucket, NOT undefined (which the metrics record as "unknown").
     expect(spy).toHaveBeenCalledWith(expect.anything(), "owner/repo", 7, "installation-token", "installation:143010787");
+    spy.mockRestore();
+  });
+
+  it("REGRESSION (#8354): evaluates every issue freshly parsed from the body — a newly-added closing reference is never skipped", async () => {
+    // Before the fix, overflow used extractLinkedIssueNumbersWithOverflow(body) while the fact-fetch loop
+    // trusted a separately-supplied linkedIssues array (often a stale pr.linkedIssues sync). A body edit that
+    // added "Fixes #99" between sync and evaluation could pass overflow yet never fetch #99. The linkedIssues
+    // parameter is now removed; the fetch list is the SAME parse's `.numbers`.
+    const spy = vi.spyOn(backfillModule, "fetchLinkedIssueFacts").mockResolvedValue({
+      status: "found",
+      facts: { number: 99, state: "open", labels: [], assignees: ["owner"], authorLogin: null, closedAt: null },
+    });
+    const r = await resolveLinkedIssueHardRule(
+      args({ config: config({ ownerAssignedClose: "block" }), ciToken: "tok", body: "Fixes #99" }),
+    );
+    // Fetch list is body-derived: #99 must be requested even though no stale linkedIssues array is (or can be) supplied.
+    expect(spy.mock.calls.map((call) => call[2])).toEqual([99]);
+    expect(r).toEqual({
+      violated: true,
+      reason: "Linked issue #99 is assigned to the maintainer (@owner) — that work is reserved for the maintainer, so this PR cannot be auto-accepted.",
+    });
     spy.mockRestore();
   });
 
