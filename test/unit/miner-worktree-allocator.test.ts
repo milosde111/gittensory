@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   acquireWorktree,
   closeDefaultWorktreeAllocator,
+  countWorktreeSlotsToPurge,
   isProcessAlive,
   openWorktreeAllocator,
   releaseWorktree,
@@ -178,5 +179,103 @@ describe("loopover-miner worktree allocator scaffolding (#4298)", () => {
 
     closeAllCleanupResources(); // what installCliSignalHandlers invokes on SIGINT/SIGTERM
     expect(cleanupResourceCount()).toBe(0);
+  });
+});
+
+describe("worktree allocator purgeByRepo (right-to-be-forgotten, #8320)", () => {
+  // A `free` slot never carries a real repo_full_name in normal operation (release()/reclaimOrphanedAllocations()
+  // blank it on every free), so seed the stale-row case directly through a second connection to exercise the
+  // defensive backstop purgeByRepo exists for.
+  function seedStaleFreeSlot(dbPath: string, slotIndex: number, repoFullName: string): void {
+    const raw = new DatabaseSync(dbPath);
+    try {
+      raw
+        .prepare("UPDATE worktree_slots SET repo_full_name = ? WHERE slot_index = ? AND status = 'free'")
+        .run(repoFullName, slotIndex);
+    } finally {
+      raw.close();
+    }
+  }
+
+  it("clears a free slot's stale repo_full_name and reports the count, never deleting the slot", () => {
+    const allocator = tempAllocator({ maxConcurrency: 2 });
+    seedStaleFreeSlot(allocator.dbPath, 0, "acme/widgets");
+
+    expect(allocator.purgeByRepo("acme/widgets")).toBe(1);
+
+    const slots = allocator.listSlots();
+    expect(slots).toHaveLength(2); // the fixed pool is intact — no row was deleted
+    const cleared = slots.find((slot) => slot.slotIndex === 0)!;
+    expect(cleared.status).toBe("free");
+    expect(cleared.repoFullName).toBeNull();
+    expect(cleared.attemptId).toBeNull();
+    expect(cleared.ownerPid).toBeNull();
+    expect(cleared.ownerHost).toBeNull();
+    expect(cleared.allocatedAt).toBeNull();
+  });
+
+  it("never touches or counts an ACTIVE slot for the target repo (a live in-flight attempt)", () => {
+    const allocator = tempAllocator({ maxConcurrency: 2 });
+    allocator.acquire("attempt-live", "acme/widgets");
+
+    expect(allocator.purgeByRepo("acme/widgets")).toBe(0); // the active slot is not purgeable
+
+    const active = allocator.listSlots().find((slot) => slot.attemptId === "attempt-live")!;
+    expect(active.status).toBe("active");
+    expect(active.repoFullName).toBe("acme/widgets"); // the live checkout's repo is left intact
+  });
+
+  it("returns 0 when no free slot carries the target repo, leaving other stale rows untouched", () => {
+    const allocator = tempAllocator({ maxConcurrency: 2 });
+    seedStaleFreeSlot(allocator.dbPath, 0, "acme/widgets");
+
+    expect(allocator.purgeByRepo("acme/other")).toBe(0);
+    expect(allocator.listSlots().find((slot) => slot.slotIndex === 0)!.repoFullName).toBe("acme/widgets");
+  });
+
+  it("rejects an invalid repo_full_name the same way acquire does", () => {
+    const allocator = tempAllocator({ maxConcurrency: 1 });
+    expect(() => allocator.purgeByRepo("bad")).toThrow("invalid_repo_full_name");
+    expect(() => allocator.purgeByRepo("../widgets")).toThrow("invalid_repo_full_name");
+  });
+});
+
+describe("countWorktreeSlotsToPurge (dry-run counterpart, #8320)", () => {
+  function seedStaleFreeSlot(dbPath: string, slotIndex: number, repoFullName: string): void {
+    const raw = new DatabaseSync(dbPath);
+    try {
+      raw
+        .prepare("UPDATE worktree_slots SET repo_full_name = ? WHERE slot_index = ? AND status = 'free'")
+        .run(repoFullName, slotIndex);
+    } finally {
+      raw.close();
+    }
+  }
+
+  it("counts only free stale slots for the target repo, never an active slot", () => {
+    const allocator = tempAllocator({ maxConcurrency: 2 });
+    allocator.acquire("attempt-live", "acme/widgets");
+    seedStaleFreeSlot(allocator.dbPath, 1, "acme/widgets");
+
+    const db = new DatabaseSync(allocator.dbPath, { readOnly: true });
+    try {
+      expect(countWorktreeSlotsToPurge(db, "acme/widgets")).toBe(1);
+      expect(countWorktreeSlotsToPurge(db, "acme/other")).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("returns 0 when the count query yields no row (defensive ?? 0 arm)", () => {
+    // Empty in-memory DB with no worktree_slots table: prepare/get throws. Instead stub the prepared
+    // statement path by opening a real allocator DB then dropping the table — but node:sqlite may
+    // refuse that under an open writer. Safer: exercise the nullish arm via a DatabaseSync whose
+    // prepare returns a get() that yields undefined (mirrors retention.test.ts's defensive-arm style).
+    const fakeDb = {
+      prepare: () => ({
+        get: () => undefined,
+      }),
+    };
+    expect(countWorktreeSlotsToPurge(fakeDb as never, "acme/widgets")).toBe(0);
   });
 });
